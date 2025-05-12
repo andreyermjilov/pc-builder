@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "engines": {
-  "node": ">=22.15.0"
+    "node": ">=22.15.0"
+  },
   "scripts": {
     "start": "react-scripts start",
     "build": "node node_modules/react-scripts/bin/react-scripts.js build",
