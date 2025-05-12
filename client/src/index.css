@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+/* Анимация для появления карточек */
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.5s ease-out forwards;
+}
+
+/* Улучшение стилей для мобильных устройств */
+@media (max-width: 640px) {
+  .min-h-screen {
+    padding: 1rem;
+  }
+  .max-w-4xl {
+    padding: 1.5rem;
+  }
+  .text-3xl {
+    font-size: 1.5rem;
+  }
+  .text-2xl {
+    font-size: 1.25rem;
+  }
+}
