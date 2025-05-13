@@ -51,6 +51,7 @@ function PCBuilder() {
       wattage: Number(item.wattage) || 0,
       type: item.type ? item.type.trim() : '',
       version: item.version ? item.version.trim() : '',
+      integratedGraphics: item.integratedGraphics === true || item.integratedGraphics === 'true',
     };
     return normalized;
   };
@@ -117,9 +118,14 @@ function PCBuilder() {
   const predefinedTemplates = useMemo(() => {
     if (!components.length) return [];
 
-    const getCheapest = (category) => components
-      .filter(c => c.category === category && c.price > 0)
-      .sort((a, b) => a.price - b.price)[0];
+    const getCheapest = (category, requiresIntegratedGraphics = false) => {
+      let filteredComponents = components
+        .filter(c => c.category === category && c.price > 0);
+      if (requiresIntegratedGraphics && category === 'processor') {
+        filteredComponents = filteredComponents.filter(c => c.integratedGraphics);
+      }
+      return filteredComponents.sort((a, b) => a.price - b.price)[0];
+    };
 
     const getMidRange = (category) => {
       const sorted = components
@@ -132,7 +138,7 @@ function PCBuilder() {
       .filter(c => c.category === category && c.price > 0)
       .sort((a, b) => b.performance - a.performance)[0];
 
-    const checkCompatibility = (config) => {
+    const checkCompatibility = (config, isOfficePC = false) => {
       if (config.motherboard && config.processor && config.motherboard.socket !== config.processor.socket) {
         return false;
       }
@@ -154,20 +160,28 @@ function PCBuilder() {
           return false;
         }
       }
-      return true;
+      // Для офисного ПК не требуется видеокарта
+      if (isOfficePC && config.processor && config.processor.integratedGraphics) {
+        return true;
+      }
+      // Для других шаблонов требуется видеокарта
+      return !!config.graphicsCard;
     };
 
     const allCategories = [
       'processor', 'graphicsCard', 'ram', 'storage', 'motherboard',
       'case', 'cooler', 'monitor', 'powerSupply', 'keyboard', 'mouse'
     ];
+    const officeCategories = allCategories.filter(category => category !== 'graphicsCard');
 
     const templates = [
       {
         id: 'office-pc',
         name: 'Офисный ПК',
         description: 'Самый дешёвый вариант для работы с документами и браузером.',
-        components: allCategories.map(category => getCheapest(category)).filter(Boolean),
+        components: officeCategories.map(category => 
+          getCheapest(category, category === 'processor' ? true : false)
+        ).filter(Boolean),
       },
       {
         id: 'budget-gaming',
@@ -188,9 +202,10 @@ function PCBuilder() {
         ...template,
         components: template.components.filter(comp => activeCategories.includes(comp.category)),
       }))
-      .filter(template => template.components.length > 0 && checkCompatibility({
-        ...template.components.reduce((acc, comp) => ({ ...acc, [comp.category]: comp }), {}),
-      }));
+      .filter(template => template.components.length > 0 && checkCompatibility(
+        template.components.reduce((acc, comp) => ({ ...acc, [comp.category]: comp }), {}),
+        template.id === 'office-pc'
+      ));
   }, [components, activeCategories]);
 
   // Генерация комбинаций
@@ -212,7 +227,7 @@ function PCBuilder() {
       }
       if (category === 'case' && currentConfig.motherboard && selectedCategories.case && selectedCategories.motherboard && component.formFactor && currentConfig.motherboard.formFactor) {
         const caseFormFactors = String(component.formFactor).split(',').map(f => f.trim().toLowerCase());
-        if (!caseFormFactors.includes(String(config.motherboard.formFactor).trim().toLowerCase())) {
+        if (!caseFormFactors.includes(String(currentConfig.motherboard.formFactor).trim().toLowerCase())) {
           return { isCompatible: false, reason: `Case ${component.name} (form factors: ${component.formFactor}) incompatible with Motherboard ${currentConfig.motherboard.name} (form factor: ${currentConfig.motherboard.formFactor})` };
         }
       }
@@ -323,7 +338,7 @@ function PCBuilder() {
     }
 
     setTimeout(() => {
-      const allGeneratedConfigs = generateCombinations(selectedComponents, maxBudget, activeCategories);
+      const allGeneratedConfigs = generateCombinations(selectedComponents, maxBudget, activeActiveCategories);
       
       const fullConfigs = allGeneratedConfigs.filter(config => config.totalPrice <= maxBudget);
       const tempClosestConfigs = allGeneratedConfigs.filter(
@@ -530,7 +545,6 @@ function PCBuilder() {
 }
 
 export default PCBuilder;
-
 
 
 
