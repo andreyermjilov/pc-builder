@@ -16,7 +16,7 @@ const categoryTranslations = {
   operatingSystem: 'Операционная система',
 };
 
-const API_BASE_URL = 'https://pc-builder-backend-24zh.onrender.com/api';
+const API_BASE_URL = 'https://pc-builder-backend-24zh.onrender.com';
 
 function PCBuilder() {
   const [components, setComponents] = useState([]);
