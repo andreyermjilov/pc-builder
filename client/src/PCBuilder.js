@@ -132,7 +132,7 @@ function PCBuilder() {
       .filter(c => c.category === category && c.price > 0)
       .sort((a, b) => b.performance - a.performance)[0];
 
-    const checkCompatibility = (config, isOfficePC = false) => {
+    const checkCompatibility = (config) => {
       if (config.motherboard && config.processor && config.motherboard.socket !== config.processor.socket) {
         return false;
       }
@@ -142,50 +142,58 @@ function PCBuilder() {
           return false;
         }
       }
-      if (config.cooler && config.processor) {
-        const coolerSockets = String(config.cooler.socket).split(',').map(s => s.trim());
-        if (!coolerSockets.includes(String(config.processor.socket))) {
-          return false;
-        }
-      }
       if (config.powerSupply && config.processor) {
-        const requiredPower = (config.processor.power || 0) + (config.graphicsCard?.power || 0) + 100;
+        const requiredPower = (config.processor.power || 0) + (config.graphicsCard?.power || 0) + (config.cooler?.power || 0) + 100;
         if (config.powerSupply.wattage < requiredPower) {
           return false;
         }
       }
-      // Для офисного ПК видеокарта не требуется
-      if (isOfficePC) {
-        return true;
-      }
-      // Для других шаблонов требуется видеокарта
-      return !!config.graphicsCard;
+      return true;
     };
-
-    const allCategories = [
-      'processor', 'graphicsCard', 'ram', 'storage', 'motherboard',
-      'case', 'cooler', 'monitor', 'powerSupply', 'keyboard', 'mouse'
-    ];
-    const officeCategories = allCategories.filter(category => category !== 'graphicsCard');
 
     const templates = [
       {
         id: 'office-pc',
         name: 'Офисный ПК',
         description: 'Самый дешёвый вариант для работы с документами и браузером.',
-        components: officeCategories.map(category => getCheapest(category)).filter(Boolean),
+        components: [
+          getCheapest('processor'),
+          getCheapest('ram'),
+          getCheapest('storage'),
+          getCheapest('motherboard'),
+          getCheapest('case'),
+          getCheapest('powerSupply'),
+        ].filter(Boolean),
       },
       {
         id: 'budget-gaming',
         name: 'Бюджетный игровой',
         description: 'Для лёгких игр на низких-средних настройках (CS:GO, Dota 2).',
-        components: allCategories.map(category => getMidRange(category)).filter(Boolean),
+        components: [
+          getMidRange('processor'),
+          getCheapest('graphicsCard'),
+          getMidRange('ram'),
+          getMidRange('storage'),
+          getMidRange('motherboard'),
+          getMidRange('case'),
+          getCheapest('cooler'),
+          getMidRange('powerSupply'),
+        ].filter(Boolean),
       },
       {
         id: 'optimal-gaming',
         name: 'Оптимальный гейминг',
         description: 'Для современных игр на высоких настройках в 1080p.',
-        components: allCategories.map(category => getHighPerformance(category)).filter(Boolean),
+        components: [
+          getHighPerformance('processor'),
+          getHighPerformance('graphicsCard'),
+          getHighPerformance('ram'),
+          getHighPerformance('storage'),
+          getHighPerformance('motherboard'),
+          getHighPerformance('case'),
+          getHighPerformance('cooler'),
+          getHighPerformance('powerSupply'),
+        ].filter(Boolean),
       },
     ];
 
@@ -194,10 +202,9 @@ function PCBuilder() {
         ...template,
         components: template.components.filter(comp => activeCategories.includes(comp.category)),
       }))
-      .filter(template => template.components.length > 0 && checkCompatibility(
-        template.components.reduce((acc, comp) => ({ ...acc, [comp.category]: comp }), {}),
-        template.id === 'office-pc'
-      ));
+      .filter(template => template.components.length > 0 && checkCompatibility({
+        ...template.components.reduce((acc, comp) => ({ ...acc, [comp.category]: comp }), {}),
+      }));
   }, [components, activeCategories]);
 
   // Генерация комбинаций
@@ -213,7 +220,7 @@ function PCBuilder() {
       }
       if (category === 'cooler' && currentConfig.processor && selectedCategories.cooler && selectedCategories.processor) {
         const coolerSockets = String(component.socket).split(',').map(s => s.trim());
-        if (!coolerSockets.includes(String(config.processor.socket))) {
+        if (!coolerSockets.includes(String(currentConfig.processor.socket))) {
           return { isCompatible: false, reason: `Cooler ${component.name} (sockets: ${component.socket}) incompatible with Processor ${currentConfig.processor.name} (socket: ${currentConfig.processor.socket})` };
         }
       }
@@ -537,7 +544,6 @@ function PCBuilder() {
 }
 
 export default PCBuilder;
-
 
 
 
