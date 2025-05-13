@@ -36,7 +36,7 @@ async function readSheet(sheetName) {
   try {
     const client = await auth.getClient();
     const sheets = google.sheets({ version: 'v4', auth: client });
-    const range = `${sheetName}!A2:D`;
+    const range = `${sheetName}!A2:F`;
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
       range,
