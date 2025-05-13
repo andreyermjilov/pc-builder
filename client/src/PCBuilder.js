@@ -142,8 +142,14 @@ function PCBuilder() {
           return false;
         }
       }
+      if (config.cooler && config.processor) {
+        const coolerSockets = String(config.cooler.socket).split(',').map(s => s.trim());
+        if (!coolerSockets.includes(String(config.processor.socket))) {
+          return false;
+        }
+      }
       if (config.powerSupply && config.processor) {
-        const requiredPower = (config.processor.power || 0) + (config.graphicsCard?.power || 0) + (config.cooler?.power || 0) + 100;
+        const requiredPower = (config.processor.power || 0) + (config.graphicsCard?.power || 0) + 100;
         if (config.powerSupply.wattage < requiredPower) {
           return false;
         }
@@ -151,49 +157,29 @@ function PCBuilder() {
       return true;
     };
 
+    const allCategories = [
+      'processor', 'graphicsCard', 'ram', 'storage', 'motherboard',
+      'case', 'cooler', 'monitor', 'powerSupply', 'keyboard', 'mouse'
+    ];
+
     const templates = [
       {
         id: 'office-pc',
         name: 'Офисный ПК',
         description: 'Самый дешёвый вариант для работы с документами и браузером.',
-        components: [
-          getCheapest('processor'),
-          getCheapest('ram'),
-          getCheapest('storage'),
-          getCheapest('motherboard'),
-          getCheapest('case'),
-          getCheapest('powerSupply'),
-        ].filter(Boolean),
+        components: allCategories.map(category => getCheapest(category)).filter(Boolean),
       },
       {
         id: 'budget-gaming',
         name: 'Бюджетный игровой',
         description: 'Для лёгких игр на низких-средних настройках (CS:GO, Dota 2).',
-        components: [
-          getMidRange('processor'),
-          getCheapest('graphicsCard'),
-          getMidRange('ram'),
-          getMidRange('storage'),
-          getMidRange('motherboard'),
-          getMidRange('case'),
-          getCheapest('cooler'),
-          getMidRange('powerSupply'),
-        ].filter(Boolean),
+        components: allCategories.map(category => getMidRange(category)).filter(Boolean),
       },
       {
         id: 'optimal-gaming',
         name: 'Оптимальный гейминг',
         description: 'Для современных игр на высоких настройках в 1080p.',
-        components: [
-          getHighPerformance('processor'),
-          getHighPerformance('graphicsCard'),
-          getHighPerformance('ram'),
-          getHighPerformance('storage'),
-          getHighPerformance('motherboard'),
-          getHighPerformance('case'),
-          getHighPerformance('cooler'),
-          getHighPerformance('powerSupply'),
-        ].filter(Boolean),
+        components: allCategories.map(category => getHighPerformance(category)).filter(Boolean),
       },
     ];
 
@@ -226,7 +212,7 @@ function PCBuilder() {
       }
       if (category === 'case' && currentConfig.motherboard && selectedCategories.case && selectedCategories.motherboard && component.formFactor && currentConfig.motherboard.formFactor) {
         const caseFormFactors = String(component.formFactor).split(',').map(f => f.trim().toLowerCase());
-        if (!caseFormFactors.includes(String(currentConfig.motherboard.formFactor).trim().toLowerCase())) {
+        if (!caseFormFactors.includes(String(config.motherboard.formFactor).trim().toLowerCase())) {
           return { isCompatible: false, reason: `Case ${component.name} (form factors: ${component.formFactor}) incompatible with Motherboard ${currentConfig.motherboard.name} (form factor: ${currentConfig.motherboard.formFactor})` };
         }
       }
@@ -544,7 +530,6 @@ function PCBuilder() {
 }
 
 export default PCBuilder;
-
 
 
 
