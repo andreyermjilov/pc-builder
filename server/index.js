@@ -17,7 +17,7 @@ if (!spreadsheetId || !keyFilePath) {
   process.exit(1);
 }
 
-// ✅ Используем абсолютный путь к ключу
+// Абсолютный путь к ключу
 const auth = new google.auth.GoogleAuth({
   keyFile: path.resolve(__dirname, keyFilePath),
   scopes: ['https://www.googleapis.com/auth/spreadsheets'],
@@ -26,7 +26,12 @@ const auth = new google.auth.GoogleAuth({
 const corsOrigin = process.env.CORS_ORIGIN || '*';
 app.use(cors({ origin: corsOrigin }));
 
-// Чтение одной вкладки из таблицы
+// Кэш
+let cachedComponents = null;
+let lastFetchTime = 0;
+const CACHE_TTL = 60 * 1000; // 60 секунд
+
+// Функция чтения одного листа
 async function readSheet(sheetName) {
   try {
     const client = await auth.getClient();
@@ -56,8 +61,17 @@ async function readSheet(sheetName) {
   }
 }
 
-// Объединённый маршрут для чтения всех вкладок
+// Получение всех компонентов (с кэшированием)
 app.get('/api/components', async (req, res) => {
+  const now = Date.now();
+
+  if (cachedComponents && now - lastFetchTime < CACHE_TTL) {
+    console.log('📦 Возвращаем кэшированные компоненты');
+    return res.json(cachedComponents);
+  }
+
+  console.log('🔄 Загрузка компонентов из Google Sheets...');
+
   const sheetNames = [
     'processor', 'graphicsCard', 'ram', 'storage',
     'motherboard', 'case', 'cooler', 'monitor',
@@ -75,11 +89,13 @@ app.get('/api/components', async (req, res) => {
     allComponents.push(...items);
   }
 
-  console.log(`Всего компонентов с сервера для отправки: ${allComponents.length}`);
+  cachedComponents = allComponents;
+  lastFetchTime = now;
+
+  console.log(`✅ Всего компонентов с сервера для отправки: ${allComponents.length}`);
   res.json(allComponents);
 });
 
-// Запуск сервера
 app.listen(port, () => {
-  console.log(`Сервер запущен на порту ${port}`);
+  console.log(`🚀 Сервер запущен на порту ${port}`);
 });
