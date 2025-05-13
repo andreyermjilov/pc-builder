@@ -51,7 +51,6 @@ function PCBuilder() {
       wattage: Number(item.wattage) || 0,
       type: item.type ? item.type.trim() : '',
       version: item.version ? item.version.trim() : '',
-      integratedGraphics: item.integratedGraphics === true || item.integratedGraphics === 'true',
     };
     return normalized;
   };
@@ -118,14 +117,9 @@ function PCBuilder() {
   const predefinedTemplates = useMemo(() => {
     if (!components.length) return [];
 
-    const getCheapest = (category, requiresIntegratedGraphics = false) => {
-      let filteredComponents = components
-        .filter(c => c.category === category && c.price > 0);
-      if (requiresIntegratedGraphics && category === 'processor') {
-        filteredComponents = filteredComponents.filter(c => c.integratedGraphics);
-      }
-      return filteredComponents.sort((a, b) => a.price - b.price)[0];
-    };
+    const getCheapest = (category) => components
+      .filter(c => c.category === category && c.price > 0)
+      .sort((a, b) => a.price - b.price)[0];
 
     const getMidRange = (category) => {
       const sorted = components
@@ -160,8 +154,8 @@ function PCBuilder() {
           return false;
         }
       }
-      // Для офисного ПК не требуется видеокарта
-      if (isOfficePC && config.processor && config.processor.integratedGraphics) {
+      // Для офисного ПК видеокарта не требуется
+      if (isOfficePC) {
         return true;
       }
       // Для других шаблонов требуется видеокарта
@@ -179,9 +173,7 @@ function PCBuilder() {
         id: 'office-pc',
         name: 'Офисный ПК',
         description: 'Самый дешёвый вариант для работы с документами и браузером.',
-        components: officeCategories.map(category => 
-          getCheapest(category, category === 'processor' ? true : false)
-        ).filter(Boolean),
+        components: officeCategories.map(category => getCheapest(category)).filter(Boolean),
       },
       {
         id: 'budget-gaming',
@@ -221,7 +213,7 @@ function PCBuilder() {
       }
       if (category === 'cooler' && currentConfig.processor && selectedCategories.cooler && selectedCategories.processor) {
         const coolerSockets = String(component.socket).split(',').map(s => s.trim());
-        if (!coolerSockets.includes(String(currentConfig.processor.socket))) {
+        if (!coolerSockets.includes(String(config.processor.socket))) {
           return { isCompatible: false, reason: `Cooler ${component.name} (sockets: ${component.socket}) incompatible with Processor ${currentConfig.processor.name} (socket: ${currentConfig.processor.socket})` };
         }
       }
@@ -338,7 +330,7 @@ function PCBuilder() {
     }
 
     setTimeout(() => {
-      const allGeneratedConfigs = generateCombinations(selectedComponents, maxBudget, activeActiveCategories);
+      const allGeneratedConfigs = generateCombinations(selectedComponents, maxBudget, activeCategories);
       
       const fullConfigs = allGeneratedConfigs.filter(config => config.totalPrice <= maxBudget);
       const tempClosestConfigs = allGeneratedConfigs.filter(
@@ -545,7 +537,6 @@ function PCBuilder() {
 }
 
 export default PCBuilder;
-
 
 
 
