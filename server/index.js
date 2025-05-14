@@ -147,7 +147,52 @@ app.get('/api/components', async (req, res) => {
     cachedComponents = components;
     lastFetchTime = Date.now();
 
-    res.json(components);
+    // === ДОБАВЬ ЭТИ ФУНКЦИИ перед res.json(...) ===
+const getTemplate = (components, strategyFn) => {
+  const byCategory = (category) =>
+    components.filter(c => c.category === category && c.price > 0);
+
+  const pick = (category) => {
+    const items = byCategory(category);
+    if (!items.length) return null;
+    return strategyFn(items);
+  };
+
+  const config = {};
+  ['processor', 'graphicsCard', 'ram', 'storage', 'motherboard', 'case', 'cooler', 'powerSupply'].forEach(cat => {
+    const comp = pick(cat);
+    if (comp) config[cat] = comp;
+  });
+
+  const totalPrice = Object.values(config).reduce((sum, c) => sum + (c?.price || 0), 0);
+  const totalPerformance = Object.values(config).reduce((sum, c) => sum + (c?.performance || 0), 0);
+
+  return { components: config, totalPrice, totalPerformance };
+};
+
+const templates = [
+  {
+    id: 'office',
+    name: 'Офисный ПК',
+    description: 'Самый дешевый вариант для работы',
+    ...getTemplate(components, list => list[0])
+  },
+  {
+    id: 'budget',
+    name: 'Бюджетный игровой',
+    description: 'Для нетребовательных игр',
+    ...getTemplate(components, list => list[Math.floor(list.length / 2)] || list[0])
+  },
+  {
+    id: 'gaming',
+    name: 'Оптимальный гейминг',
+    description: 'Для игр на высоких настройках',
+    ...getTemplate(components, list => list[list.length - 1])
+  }
+];
+
+// === ЗАМЕНИ res.json(...) НА ЭТО: ===
+res.json({ components, templates });
   } catch (err) {
     console.error('❌ Внутренняя ошибка сервера:', err.message);
     res.status(500).json({ error: 'Ошибка при получении компонентов' });
