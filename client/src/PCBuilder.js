@@ -26,7 +26,6 @@ function PCBuilder() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [filterClicked, setFilterClicked] = useState(false);
-  const [templates, setTemplates] = useState([]);
 
   const [selectedCategories, setSelectedCategories] = useState(
     Object.keys(categoryTranslations).reduce((acc, key) => {
@@ -59,12 +58,12 @@ function PCBuilder() {
       interface: item.interface ? String(item.interface).trim() : '',
       memory: Number(item.memory) || 0,
       capacity: Number(item.capacity) || 0,
-      supportedFormFactors: item.supportedFormFactors ? String(item.supportedFormFactors).trim() : item.formFactor || '',
+      supportedFormFactors: item.supportedFormFactors ? String(item.supportedFormFactors).trim() : '',
     };
     return normalized;
   };
 
-  // Вычисление score для компонента
+  // Вычисление производительности для компонента
   const calculateComponentScore = (component) => {
     let score = 0;
     switch (component.category) {
@@ -74,8 +73,7 @@ function PCBuilder() {
       case 'graphicsCard':
         score = (Number(component.memory) || 0) * 10 + (parseFloat(component.pcieVersion) || 3.0) * 5;
         break;
-      case 'ram':
-        score = (Number(component.frequency) || 0) / 100 + (Number(component.capacity) || 0) * 2;
+      case Number(component.frequency) || 0) / 100 + (Number(component.capacity) || 0) * 2;
         break;
       case 'storage':
         score = component.interface === 'M.2 NVMe' ? 20 : 10;
@@ -95,18 +93,6 @@ function PCBuilder() {
       default:
         score = 1;
     }
-    console.log(`Score для ${component.category} (${component.name}): ${score}`);
-    return score;
-  };
-
-  // Вычисление score для конфигурации
-  const calculateConfigScore = (config) => {
-    let score = 0;
-    Object.keys(config).forEach(category => {
-      if (config[category]) {
-        score += calculateComponentScore(config[category]);
-      }
-    });
     return score;
   };
 
@@ -168,288 +154,247 @@ function PCBuilder() {
     setFilterClicked(false);
   };
 
-  // Проверка совместимости
-  const checkCompatibility = (category, component, currentConfig) => {
-    const reasons = [];
+  // Формирование шаблонов
+  const predefinedTemplates = useMemo(() => {
+    if (!components.length) return [];
 
-    // Проверка совместимости процессора и материнской платы
-    if (category === 'motherboard' && currentConfig.processor && selectedCategories.motherboard && selectedCategories.processor) {
-      if (component.socket !== currentConfig.processor.socket) {
-        reasons.push(`Материнская плата ${component.name} (сокет: ${component.socket}) несовместима с процессором ${currentConfig.processor.name} (сокет: ${currentConfig.processor.socket})`);
-        return { isCompatible: false, reasons };
+    const checkCompatibility = (config) => {
+      if (config.motherboard && config.processor && config.motherboard.socket !== config.processor.socket) {
+        return false;
       }
-    }
-
-    // Проверка совместимости RAM и материнской платы
-    if (category === 'ram' && currentConfig.motherboard && selectedCategories.ram && selectedCategories.motherboard) {
-      if (!component.ramType || !currentConfig.motherboard.ramType || component.ramType !== currentConfig.motherboard.ramType) {
-        reasons.push(`Оперативная память ${component.name} (тип: ${component.ramType || 'неизвестно'}) несовместима с материнской платой ${currentConfig.motherboard.name} (тип: ${currentConfig.motherboard.ramType || 'неизвестно'})`);
-        return { isCompatible: false, reasons };
+      if (config.ram && config.motherboard && config.ram.ramType !== config.motherboard.ramType) {
+        return false;
       }
-    }
-
-    // Проверка совместимости накопителя и материнской платы
-    if (category === 'storage' && currentConfig.motherboard && selectedCategories.storage && selectedCategories.motherboard) {
-      if (!component.interface || !currentConfig.motherboard.supportedInterfaces) {
-        reasons.push(`Накопитель ${component.name} не имеет интерфейса или материнская плата ${currentConfig.motherboard.name} не имеет поддерживаемых интерфейсов`);
-        return { isCompatible: false, reasons };
-      }
-      const supported = currentConfig.motherboard.supportedInterfaces.split(',').map(s => s.trim());
-      if (!supported.includes(component.interface)) {
-        reasons.push(`Накопитель ${component.name} (интерфейс: ${component.interface}) несовместим с материнской платой ${currentConfig.motherboard.name} (поддерживаемые: ${supported.join(', ')})`);
-        return { isCompatible: false, reasons };
-      }
-    }
-
-    // Проверка совместимости видеокарты и материнской платы
-    if (category === 'graphicsCard' && currentConfig.motherboard && selectedCategories.graphicsCard && selectedCategories.motherboard) {
-      const motherboardPcieVersions = String(currentConfig.motherboard.pcieVersion).split(',').map(v => v.trim());
-      if (!motherboardPcieVersions.some(version => parseFloat(version) >= parseFloat(component.pcieVersion))) {
-        reasons.push(`Видеокарта ${component.name} (PCIe: ${component.pcieVersion}) несовместима с материнской платой ${currentConfig.motherboard.name} (PCIe: ${currentConfig.motherboard.pcieVersion})`);
-        return { isCompatible: false, reasons };
-      }
-    }
-
-    // Проверка совместимости кулера и процессора
-    if (category === 'cooler' && currentConfig.processor && selectedCategories.cooler && selectedCategories.processor) {
-      const coolerSockets = String(component.socket).split(',').map(s => s.trim());
-      if (!coolerSockets.includes(currentConfig.processor.socket)) {
-        reasons.push(`Кулер ${component.name} (сокеты: ${component.socket}) несовместим с процессором ${currentConfig.processor.name} (сокет: ${currentConfig.processor.socket})`);
-        return { isCompatible: false, reasons };
-      }
-    }
-
-    // Проверка мощности блока питания
-    if (category === 'powerSupply' && (currentConfig.processor || currentConfig.graphicsCard) && selectedCategories.powerSupply) {
-      const totalPower = (Number(currentConfig.processor?.power) || 0) + (Number(currentConfig.graphicsCard?.power) || 0) + 50;
-      if (Number(component.wattage) < totalPower * 1.5) {
-        reasons.push(`Блок питания ${component.name} (мощность: ${component.wattage} Вт) недостаточен для процессора ${currentConfig.processor?.name || 'N/A'} (мощность: ${currentConfig.processor?.power || 0} Вт) и видеокарты ${currentConfig.graphicsCard?.name || 'N/A'} (мощность: ${currentConfig.graphicsCard?.power || 0} Вт). Требуется минимум ${Math.ceil(totalPower * 1.5)} Вт.`);
-        return { isCompatible: false, reasons };
-      }
-    }
-
-    // Проверка совместимости корпуса и материнской платы
-    if (category === 'case' && currentConfig.motherboard && selectedCategories.case && selectedCategories.motherboard) {
-      const caseFormFactors = String(component.supportedFormFactors || component.formFactor).split(',').map(f => f.trim().toLowerCase());
-      if (!caseFormFactors.includes(String(currentConfig.motherboard.formFactor).trim().toLowerCase())) {
-        reasons.push(`Корпус ${component.name} (поддерживаемые форм-факторы: ${component.supportedFormFactors || component.formFactor}) несовместим с материнской платой ${currentConfig.motherboard.name} (форм-фактор: ${currentConfig.motherboard.formFactor})`);
-        return { isCompatible: false, reasons };
-      }
-    }
-
-    return { isCompatible: true, reasons };
-  };
-
-  // Генерация шаблонов
-  useEffect(() => {
-    if (!components.length) {
-      setTemplates([]);
-      return;
-    }
-
-    const generateTemplateCombinations = (filteredComponents, maxBudget, templateCategories, minScore) => {
-      const results = [];
-      const maxCombinations = 5000;
-      const maxPricePerCategory = Math.ceil(maxBudget / templateCategories.length);
-
-      const buildConfig = (currentConfig, categoryIndex, totalPrice, totalScore) => {
-        if (results.length >= maxCombinations) {
-          console.warn('Достигнут лимит комбинаций для шаблона:', results.length);
-          return;
+      if (config.storage && config.motherboard && config.storage.interface && config.motherboard.supportedInterfaces) {
+        const supported = config.motherboard.supportedInterfaces.split(',').map(s => s.trim());
+        if (!supported.includes(config.storage.interface)) {
+          return false;
         }
-        if (totalPrice > maxBudget || totalScore < minScore * (categoryIndex / templateCategories.length)) {
-          return;
+      }
+      if (config.graphicsCard && config.motherboard && config.graphicsCard.pcieVersion && config.motherboard.pcieVersion) {
+        const motherboardPcieVersions = String(config.motherboard.pcieVersion).split(',').map(v => v.trim());
+        if (!motherboardPcieVersions.some(version => parseFloat(version) >= parseFloat(config.graphicsCard.pcieVersion))) {
+          return false;
         }
-        if (categoryIndex >= templateCategories.length) {
-          if (totalPrice > 0 && totalPrice <= maxBudget && totalScore >= minScore) {
-            results.push({ ...currentConfig, totalPrice, totalScore });
-          }
-          return;
+      }
+      if (config.case && config.motherboard && config.case.supportedFormFactors && config.motherboard.formFactor) {
+        const caseFormFactors = String(config.case.supportedFormFactors).split(',').map(f => f.trim().toLowerCase());
+        if (!caseFormFactors.includes(String(config.motherboard.formFactor).trim().toLowerCase())) {
+          return false;
         }
-
-        const category = templateCategories[categoryIndex];
-        const currentCategoryComponents = (filteredComponents[category] || [])
-          .filter(c => c.price <= maxPricePerCategory)
-          .slice(0, 5); // Ограничиваем до 5 лучших компонентов
-
-        if (currentCategoryComponents.length === 0) {
-          buildConfig(currentConfig, categoryIndex + 1, totalPrice, totalScore);
-          return;
+      }
+      if (config.cooler && config.processor && config.cooler.socket && config.processor.socket) {
+        const coolerSockets = String(config.cooler.socket).split(',').map(s => s.trim());
+        if (!coolerSockets.includes(config.processor.socket)) {
+          return false;
         }
-
-        currentCategoryComponents
-          .sort((a, b) => {
-            const scoreA = calculateComponentScore(a);
-            const scoreB = calculateComponentScore(b);
-            return (scoreB / (Number(b.price) || 1)) - (scoreA / (Number(a.price) || 1));
-          })
-          .forEach(component => {
-            const { isCompatible, reasons } = checkCompatibility(category, component, currentConfig);
-            if (!isCompatible) {
-              console.log(`Исключён ${category} для шаблона: ${component.name} (${component.price} ₸) из-за:`, reasons);
-              return;
-            }
-
-            const newPrice = totalPrice + Number(component.price);
-            const newScore = totalScore + calculateComponentScore(component);
-
-            buildConfig(
-              { ...currentConfig, [category]: component },
-              categoryIndex + 1,
-              newPrice,
-              newScore
-            );
-          });
-      };
-
-      buildConfig({}, 0, 0, 0);
-      return results.sort((a, b) => b.totalScore - a.totalScore)[0]; // Возвращаем лучшую конфигурацию
+      }
+      if (config.powerSupply && config.processor) {
+        const totalPower = (config.processor.power || 0) + (config.graphicsCard?.power || 0) + 50;
+        if (config.powerSupply.wattage < totalPower * 1.5) {
+          return false;
+        }
+      }
+      return true;
     };
 
-    const templateConfigs = [
+    const templates = [
       {
         id: 'office-pc',
         name: 'Офисный ПК',
         description: 'Самый дешёвый вариант для работы с документами и браузером.',
-        filter: {
-          processor: components => components.filter(c => c.category === 'processor' && (Number(c.frequency) || 0) < 4.0),
-          graphicsCard: () => [],
-          monitor: () => [],
-          keyboard: () => [],
-          mouse: () => [],
-        },
-        budget: 200000,
-        minScore: 50,
+        components: [
+          components
+            .filter(c => c.category === 'processor' && c.frequency < 4.0 && c.price > 0)
+            .sort((a, b) => a.price - b.price)[0],
+          components
+            .filter(c => c.category === 'ram' && c.price > 0)
+            .sort((a, b) => a.price - b.price)[0],
+          components
+            .filter(c => c.category === 'storage' && c.price > 0)
+            .sort((a, b) => a.price - b.price)[0],
+          components
+            .filter(c => c.category === 'motherboard' && c.price > 0)
+            .sort((a, b) => a.price - b.price)[0],
+          components
+            .filter(c => c.category === 'case' && c.price > 0)
+            .sort((a, b) => a.price - b.price)[0],
+          components
+            .filter(c => c.category === 'powerSupply' && c.price > 0)
+            .sort((a, b) => a.price - b.price)[0],
+        ].filter(Boolean),
       },
       {
         id: 'budget-gaming',
         name: 'Бюджетный игровой',
         description: 'Для лёгких игр на низких-средних настройках (CS:GO, Dota 2).',
-        filter: {
-          processor: components => components.filter(c => c.category === 'processor'),
-          graphicsCard: components => components.filter(c => c.category === 'graphicsCard'),
-        },
-        budget: 300000,
-        minScore: 100,
+        components: [
+          components
+            .filter(c => c.category === 'processor' && c.price > 0)
+            .sort((a, b) => calculateComponentScore(b) - calculateComponentScore(a))[0],
+          components
+            .filter(c => c.category === 'graphicsCard' && c.price > 0)
+            .sort((a, b) => a.price - b.price)[0],
+          components
+            .filter(c => c.category === 'ram' && c.price > 0)
+            .sort((a, b) => calculateComponentScore(b) - calculateComponentScore(a))[0],
+          components
+            .filter(c => c.category === 'storage' && c.price > 0)
+            .sort((a, b) => calculateComponentScore(b) - calculateComponentScore(a))[0],
+          components
+            .filter(c => c.category === 'motherboard' && c.price > 0)
+            .sort((a, b) => calculateComponentScore(b) - calculateComponentScore(a))[0],
+          components
+            .filter(c => c.category === 'case' && c.price > 0)
+            .sort((a, b) => calculateComponentScore(b) - calculateComponentScore(a))[0],
+          components
+            .filter(c => c.category === 'cooler' && c.price > 0)
+            .sort((a, b) => a.price - b.price)[0],
+          components
+            .filter(c => c.category === 'powerSupply' && c.price > 0)
+            .sort((a, b) => calculateComponentScore(b) - calculateComponentScore(a))[0],
+        ].filter(Boolean),
       },
       {
         id: 'optimal-gaming',
         name: 'Оптимальный гейминг',
         description: 'Для современных игр на высоких настройках в 1080p.',
-        filter: {
-          processor: components => components.filter(c => c.category === 'processor' && (Number(c.frequency) || 0) >= 4.5 && (Number(c.cores) || 0) >= 6),
-          graphicsCard: components => components.filter(c => c.category === 'graphicsCard'),
-        },
-        budget: 500000,
-        minScore: 150,
+        components: [
+          components
+            .filter(c => c.category === 'processor' && c.frequency >= 4.5 && c.cores >= 6 && c.price > 0)
+            .sort((a, b) => calculateComponentScore(b) - calculateComponentScore(a))[0],
+          components
+            .filter(c => c.category === 'graphicsCard' && c.price > 0)
+            .sort((a, b) => calculateComponentScore(b) - calculateComponentScore(a))[0],
+          components
+            .filter(c => c.category === 'ram' && c.price > 0)
+            .sort((a, b) => calculateComponentScore(b) - calculateComponentScore(a))[0],
+          components
+            .filter(c => c.category === 'storage' && c.price > 0)
+            .sort((a, b) => calculateComponentScore(b) - calculateComponentScore(a))[0],
+          components
+            .filter(c => c.category === 'motherboard' && c.price > 0)
+            .sort((a, b) => calculateComponentScore(b) - calculateComponentScore(a))[0],
+          components
+            .filter(c => c.category === 'case' && c.price > 0)
+            .sort((a, b) => calculateComponentScore(b) - calculateComponentScore(a))[0],
+          components
+            .filter(c => c.category === 'cooler' && c.price > 0)
+            .sort((a, b) => calculateComponentScore(b) - calculateComponentScore(a))[0],
+          components
+            .filter(c => c.category === 'powerSupply' && c.price > 0)
+            .sort((a, b) => calculateComponentScore(b) - calculateComponentScore(a))[0],
+        ].filter(Boolean),
       },
     ];
 
-    const newTemplates = templateConfigs
-      .map(template => {
-        const filteredComponents = activeCategories.reduce((acc, category) => {
-          acc[category] = template.filter[category]
-            ? template.filter[category](components)
-            : components.filter(c => c.category === category && c.price > 0);
-          return acc;
-        }, {});
-        
-        const config = generateTemplateCombinations(filteredComponents, template.budget, activeCategories, template.minScore);
-        if (!config || config.totalScore < template.minScore) {
-          return null;
-        }
-
-        return {
-          id: template.id,
-          name: template.name,
-          description: template.description,
-          components: Object.entries(config)
-            .filter(([key]) => key !== 'totalPrice' && key !== 'totalScore')
-            .map(([_, comp]) => comp)
-            .filter(comp => comp),
-        };
-      })
-      .filter(template => template && template.components.length > 0);
-
-    setTemplates(newTemplates);
+    return templates
+      .map(template => ({
+        ...template,
+        components: template.components.filter(comp => activeCategories.includes(comp.category)),
+      }))
+      .filter(template => template.components.length > 0 && checkCompatibility({
+        ...template.components.reduce((acc, comp) => ({ ...acc, [comp.category]: comp }), {}),
+      }));
   }, [components, activeCategories]);
 
   // Генерация комбинаций
   const generateCombinations = useCallback((componentsByCategory, maxBudget, currentActiveCategories) => {
-    console.log('Бюджет:', maxBudget);
-    console.log('Доступные процессоры:', componentsByCategory.processor?.map(p => ({
-      name: p.name,
-      price: p.price,
-      socket: p.socket,
-      frequency: p.frequency,
-      cores: p.cores,
-      score: calculateComponentScore(p)
-    })) || []);
-    console.log('Доступные материнские платы:', componentsByCategory.motherboard?.map(m => ({
-      name: m.name,
-      price: m.price,
-      socket: m.socket,
-      ramType: m.ramType,
-      supportedInterfaces: m.supportedInterfaces,
-      pcieVersion: m.pcieVersion
-    })) || []);
-
     const results = [];
-    const maxCombinations = 10000;
-    const maxPricePerCategory = Math.ceil(maxBudget / currentActiveCategories.length);
+    const maxCombinations = 2000;
 
-    const buildConfig = (currentConfig, categoryIndex, totalPrice, totalScore) => {
+    const checkCompatibility = (category, component, currentConfig) => {
+      if (category === 'motherboard' && currentConfig.processor && selectedCategories.motherboard && selectedCategories.processor) {
+        if (component.socket !== currentConfig.processor.socket) {
+          return { isCompatible: false, reason: `Материнская плата ${component.name} (сокет: ${component.socket}) несовместима с процессором ${currentConfig.processor.name} (сокет: ${currentConfig.processor.socket})` };
+        }
+      }
+      if (category === 'ram' && currentConfig.motherboard && selectedCategories.ram && selectedCategories.motherboard) {
+        if (component.ramType !== currentConfig.motherboard.ramType) {
+          return { isCompatible: false, reason: `Оперативная память ${component.name} (тип: ${component.ramType}) несовместима с материнской платой ${currentConfig.motherboard.name} (тип: ${currentConfig.motherboard.ramType})` };
+        }
+      }
+      if (category === 'storage' && currentConfig.motherboard && selectedCategories.storage && selectedCategories.motherboard) {
+        if (!component.interface || !currentConfig.motherboard.supportedInterfaces) {
+          return { isCompatible: false, reason: `Накопитель ${component.name} не имеет интерфейса или материнская плата ${currentConfig.motherboard.name} не имеет поддерживаемых интерфейсов` };
+        }
+        const supported = currentConfig.motherboard.supportedInterfaces.split(',').map(s => s.trim());
+        if (!supported.includes(component.interface)) {
+          return { isCompatible: false, reason: `Накопитель ${component.name} (интерфейс: ${component.interface}) несовместим с материнской платой ${currentConfig.motherboard.name} (поддерживаемые: ${supported.join(', ')})` };
+        }
+      }
+      if (category === 'graphicsCard' && currentConfig.motherboard && selectedCategories.graphicsCard && selectedCategories.motherboard) {
+        const motherboardPcieVersions = String(currentConfig.motherboard.pcieVersion).split(',').map(v => v.trim());
+        if (!motherboardPcieVersions.some(version => parseFloat(version) >= parseFloat(component.pcieVersion))) {
+          return { isCompatible: false, reason: `Видеокарта ${component.name} (PCIe: ${component.pcieVersion}) несовместима с материнской платой ${currentConfig.motherboard.name} (PCIe: ${currentConfig.motherboard.pcieVersion})` };
+        }
+      }
+      if (category === 'cooler' && currentConfig.processor && selectedCategories.cooler && selectedCategories.processor) {
+        const coolerSockets = String(component.socket).split(',').map(s => s.trim());
+        if (!coolerSockets.includes(currentConfig.processor.socket)) {
+          return { isCompatible: false, reason: `Кулер ${component.name} (сокеты: ${component.socket}) несовместим с процессором ${currentConfig.processor.name} (сокет: ${currentConfig.processor.socket})` };
+        }
+      }
+      if (category === 'case' && currentConfig.motherboard && selectedCategories.case && selectedCategories.motherboard && component.supportedFormFactors && currentConfig.motherboard.formFactor) {
+        const caseFormFactors = String(component.supportedFormFactors).split(',').map(f => f.trim().toLowerCase());
+        if (!caseFormFactors.includes(String(currentConfig.motherboard.formFactor).trim().toLowerCase())) {
+          return { isCompatible: false, reason: `Корпус ${component.name} (форм-факторы: ${component.supportedFormFactors}) несовместим с материнской платой ${currentConfig.motherboard.name} (форм-фактор: ${currentConfig.motherboard.formFactor})` };
+        }
+      }
+      if (category === 'powerSupply' && selectedCategories.powerSupply && (currentConfig.processor || currentConfig.graphicsCard)) {
+        const totalPower = (currentConfig.processor?.power || 0) + (currentConfig.graphicsCard?.power || 0) + 50;
+        if (component.wattage < totalPower * 1.5) {
+          return { isCompatible: false, reason: `Блок питания ${component.name} (мощность: ${component.wattage} Вт) недостаточен для процессора ${currentConfig.processor?.name || 'N/A'} (мощность: ${currentConfig.processor?.power || 0} Вт) и видеокарты ${currentConfig.graphicsCard?.name || 'N/A'} (мощность: ${currentConfig.graphicsCard?.power || 0} Вт). Требуется минимум ${Math.ceil(totalPower * 1.5)} Вт.` };
+        }
+      }
+      return { isCompatible: true, reason: '' };
+    };
+
+    const buildConfig = (currentConfig, categoryIndex, totalPrice, totalPerformance) => {
       if (results.length >= maxCombinations) {
         console.warn('Достигнут лимит комбинаций:', results.length);
         return;
       }
-      if (totalPrice > maxBudget) {
+      if (totalPrice > maxBudget + 100000) {
         return;
       }
       if (categoryIndex >= currentActiveCategories.length) {
-        if (totalPrice > 0 && totalPrice <= maxBudget) {
-          results.push({ ...currentConfig, totalPrice, totalScore });
+        if (totalPrice > 0 && totalPrice <= maxBudget + 100000) {
+          results.push({ ...currentConfig, totalPrice, totalPerformance });
         }
         return;
       }
 
       const category = currentActiveCategories[categoryIndex];
-      const currentCategoryComponents = (componentsByCategory[category] || [])
-        .filter(c => c.price <= maxPricePerCategory)
-        .slice(0, 5); // Ограничиваем до 5 лучших компонентов
+      const currentCategoryComponents = componentsByCategory[category] || [];
 
       if (currentCategoryComponents.length === 0) {
-        buildConfig(currentConfig, categoryIndex + 1, totalPrice, totalScore);
+        buildConfig(currentConfig, categoryIndex + 1, totalPrice, totalPerformance);
         return;
       }
 
       currentCategoryComponents
-        .sort((a, b) => {
-          const scoreA = calculateComponentScore(a);
-          const scoreB = calculateComponentScore(b);
-          return (scoreB / (Number(b.price) || 1)) - (scoreA / (Number(a.price) || 1));
-        })
+        .sort((a, b) => calculateComponentScore(b) / (b.price || 1) - calculateComponentScore(a) / (a.price || 1))
         .forEach(component => {
-          const { isCompatible, reasons } = checkCompatibility(category, component, currentConfig);
+          const { isCompatible, reason } = checkCompatibility(category, component, currentConfig);
           if (!isCompatible) {
-            console.log(`Исключён ${category}: ${component.name} (${component.price} ₸) из-за:`, reasons);
+            console.log(`Исключён ${category}: ${component.name} (${component.price} ₸) из-за: ${reason}`);
             return;
           }
 
-          const newPrice = totalPrice + Number(component.price);
-          const newScore = totalScore + calculateComponentScore(component);
+          const newPrice = totalPrice + component.price;
+          const newPerformance = totalPerformance + calculateComponentScore(component);
 
           buildConfig(
             { ...currentConfig, [category]: component },
             categoryIndex + 1,
             newPrice,
-            newScore
+            newPerformance
           );
         });
     };
 
     buildConfig({}, 0, 0, 0);
-    console.log(`Сгенерировано ${results.length} конфигураций`);
     return results;
   }, [selectedCategories]);
 
@@ -515,12 +460,12 @@ function PCBuilder() {
 
       setConfigurations(
         fullConfigs
-          .sort((a, b) => b.totalScore - a.totalScore || a.totalPrice - b.totalPrice)
+          .sort((a, b) => b.totalPerformance - a.totalPerformance || a.totalPrice - b.totalPrice)
           .slice(0, 5)
       );
       setClosestConfigs(
         tempClosestConfigs
-          .sort((a, b) => b.totalScore - a.totalPrice || a.totalPrice - b.totalPrice)
+          .sort((a, b) => b.totalPerformance - a.totalPerformance || a.totalPrice - b.totalPrice)
           .slice(0, 3)
       );
       setLoading(false);
@@ -530,8 +475,8 @@ function PCBuilder() {
   // Вычисление статистики шаблона
   const calculateTemplateStats = (template) => {
     const totalPrice = template.components.reduce((sum, comp) => sum + (comp.price || 0), 0);
-    const totalScore = template.components.reduce((sum, comp) => sum + calculateComponentScore(comp), 0);
-    return { totalPrice, totalScore };
+    const totalPerformance = template.components.reduce((sum, comp) => sum + calculateComponentScore(comp), 0);
+    return { totalPrice, totalPerformance };
   };
 
   // JSX рендеринг
@@ -615,11 +560,11 @@ function PCBuilder() {
         )}
 
         {/* Предопределённые шаблоны */}
-        {!loading && !error && !filterClicked && !budget && templates.length > 0 && (
+        {!loading && !error && !filterClicked && !budget && predefinedTemplates.length > 0 && (
           <div className="mt-8">
             <h2 className="text-2xl font-bold mb-4 text-gray-700">📋 Готовые сборки для ваших задач:</h2>
-            {templates.map((template, index) => {
-              const { totalPrice, totalScore } = calculateTemplateStats(template);
+            {predefinedTemplates.map((template, index) => {
+              const { totalPrice, totalPerformance } = calculateTemplateStats(template);
               return (
                 <div
                   key={`template-${index}`}
@@ -642,7 +587,7 @@ function PCBuilder() {
                     Общая стоимость: {totalPrice.toLocaleString()} ₸
                   </p>
                   <p className="text-sm text-gray-500">
-                    Производительность: {totalScore} (усл. ед.)
+                    Производительность: {totalPerformance} (усл. ед.)
                   </p>
                 </div>
               );
@@ -672,7 +617,7 @@ function PCBuilder() {
                   Общая стоимость: {config.totalPrice.toLocaleString()} ₸
                 </p>
                 <p className="text-sm text-gray-500">
-                  Производительность: {config.totalScore} (усл. ед.)
+                  Производительность: {config.totalPerformance} (усл. ед.)
                 </p>
               </div>
             ))}
@@ -701,7 +646,7 @@ function PCBuilder() {
                   Общая стоимость: {config.totalPrice.toLocaleString()} ₸
                 </p>
                 <p className="text-sm text-gray-500">
-                  Производительность: {config.totalScore} (усл. ед.)
+                  Производительность: {config.totalPerformance} (усл. ед.)
                 </p>
               </div>
             ))}
