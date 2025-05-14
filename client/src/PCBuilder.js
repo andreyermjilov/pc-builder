@@ -26,6 +26,7 @@ function PCBuilder() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [filterClicked, setFilterClicked] = useState(false);
+  const [templates, setTemplates] = useState([]);
 
   const [selectedCategories, setSelectedCategories] = useState(
     Object.keys(categoryTranslations).reduce((acc, key) => {
@@ -220,7 +221,7 @@ function PCBuilder() {
 
     // Проверка мощности блока питания
     if (category === 'powerSupply' && (currentConfig.processor || currentConfig.graphicsCard) && selectedCategories.powerSupply) {
-      const totalPower = (Number(currentConfig.processor?.power) || 0) + (Number(currentConfig.graphicsCard?.power) || 0) + 50; // +50 Вт для остальных компонентов
+      const totalPower = (Number(currentConfig.processor?.power) || 0) + (Number(currentConfig.graphicsCard?.power) || 0) + 50;
       if (Number(component.wattage) < totalPower * 1.5) {
         reasons.push(`Блок питания ${component.name} (мощность: ${component.wattage} Вт) недостаточен для процессора ${currentConfig.processor?.name || 'N/A'} (мощность: ${currentConfig.processor?.power || 0} Вт) и видеокарты ${currentConfig.graphicsCard?.name || 'N/A'} (мощность: ${currentConfig.graphicsCard?.power || 0} Вт). Требуется минимум ${Math.ceil(totalPower * 1.5)} Вт.`);
         return { isCompatible: false, reasons };
@@ -239,32 +240,37 @@ function PCBuilder() {
     return { isCompatible: true, reasons };
   };
 
-  // Формирование шаблонов
-  const predefinedTemplates = useMemo(() => {
-    if (!components.length) return [];
+  // Генерация шаблонов
+  useEffect(() => {
+    if (!components.length) {
+      setTemplates([]);
+      return;
+    }
 
-    // Генерация комбинаций для шаблонов
-    const generateTemplateCombinations = (filteredComponents, maxBudget, templateCategories) => {
+    const generateTemplateCombinations = (filteredComponents, maxBudget, templateCategories, minScore) => {
       const results = [];
-      const maxCombinations = 1000;
+      const maxCombinations = 5000;
+      const maxPricePerCategory = Math.ceil(maxBudget / templateCategories.length);
 
       const buildConfig = (currentConfig, categoryIndex, totalPrice, totalScore) => {
         if (results.length >= maxCombinations) {
           console.warn('Достигнут лимит комбинаций для шаблона:', results.length);
           return;
         }
-        if (totalPrice > maxBudget) {
+        if (totalPrice > maxBudget || totalScore < minScore * (categoryIndex / templateCategories.length)) {
           return;
         }
         if (categoryIndex >= templateCategories.length) {
-          if (totalPrice > 0 && totalPrice <= maxBudget) {
+          if (totalPrice > 0 && totalPrice <= maxBudget && totalScore >= minScore) {
             results.push({ ...currentConfig, totalPrice, totalScore });
           }
           return;
         }
 
         const category = templateCategories[categoryIndex];
-        const currentCategoryComponents = filteredComponents[category] || [];
+        const currentCategoryComponents = (filteredComponents[category] || [])
+          .filter(c => c.price <= maxPricePerCategory)
+          .slice(0, 5); // Ограничиваем до 5 лучших компонентов
 
         if (currentCategoryComponents.length === 0) {
           buildConfig(currentConfig, categoryIndex + 1, totalPrice, totalScore);
@@ -300,17 +306,17 @@ function PCBuilder() {
       return results.sort((a, b) => b.totalScore - a.totalScore)[0]; // Возвращаем лучшую конфигурацию
     };
 
-    const templates = [
+    const templateConfigs = [
       {
         id: 'office-pc',
         name: 'Офисный ПК',
         description: 'Самый дешёвый вариант для работы с документами и браузером.',
         filter: {
           processor: components => components.filter(c => c.category === 'processor' && (Number(c.frequency) || 0) < 4.0),
-          graphicsCard: () => [], // Без видеокарты
-          monitor: () => [], // Без монитора
-          keyboard: () => [], // Без клавиатуры
-          mouse: () => [], // Без мыши
+          graphicsCard: () => [],
+          monitor: () => [],
+          keyboard: () => [],
+          mouse: () => [],
         },
         budget: 200000,
         minScore: 50,
@@ -339,7 +345,7 @@ function PCBuilder() {
       },
     ];
 
-    return templates
+    const newTemplates = templateConfigs
       .map(template => {
         const filteredComponents = activeCategories.reduce((acc, category) => {
           acc[category] = template.filter[category]
@@ -348,7 +354,7 @@ function PCBuilder() {
           return acc;
         }, {});
         
-        const config = generateTemplateCombinations(filteredComponents, template.budget, activeCategories);
+        const config = generateTemplateCombinations(filteredComponents, template.budget, activeCategories, template.minScore);
         if (!config || config.totalScore < template.minScore) {
           return null;
         }
@@ -364,6 +370,8 @@ function PCBuilder() {
         };
       })
       .filter(template => template && template.components.length > 0);
+
+    setTemplates(newTemplates);
   }, [components, activeCategories]);
 
   // Генерация комбинаций
@@ -388,6 +396,7 @@ function PCBuilder() {
 
     const results = [];
     const maxCombinations = 10000;
+    const maxPricePerCategory = Math.ceil(maxBudget / currentActiveCategories.length);
 
     const buildConfig = (currentConfig, categoryIndex, totalPrice, totalScore) => {
       if (results.length >= maxCombinations) {
@@ -405,7 +414,9 @@ function PCBuilder() {
       }
 
       const category = currentActiveCategories[categoryIndex];
-      const currentCategoryComponents = componentsByCategory[category] || [];
+      const currentCategoryComponents = (componentsByCategory[category] || [])
+        .filter(c => c.price <= maxPricePerCategory)
+        .slice(0, 5); // Ограничиваем до 5 лучших компонентов
 
       if (currentCategoryComponents.length === 0) {
         buildConfig(currentConfig, categoryIndex + 1, totalPrice, totalScore);
@@ -604,10 +615,10 @@ function PCBuilder() {
         )}
 
         {/* Предопределённые шаблоны */}
-        {!loading && !error && !filterClicked && !budget && predefinedTemplates.length > 0 && (
+        {!loading && !error && !filterClicked && !budget && templates.length > 0 && (
           <div className="mt-8">
             <h2 className="text-2xl font-bold mb-4 text-gray-700">📋 Готовые сборки для ваших задач:</h2>
-            {predefinedTemplates.map((template, index) => {
+            {templates.map((template, index) => {
               const { totalPrice, totalScore } = calculateTemplateStats(template);
               return (
                 <div
