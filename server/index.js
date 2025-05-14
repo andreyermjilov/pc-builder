@@ -1,327 +1,164 @@
-const express = require('express');
+    const express = require('express');
 const { google } = require('googleapis');
 const cors = require('cors');
+const dotenv = require('dotenv');
 const path = require('path');
-require('dotenv').config();
+
+dotenv.config();
 
 const app = express();
+const port = process.env.SERVER_PORT || 3001;
+const corsOrigin = process.env.CORS_ORIGIN || '*';
 
-const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:3000';
 const spreadsheetId = process.env.SPREADSHEET_ID;
 const keyFilePath = process.env.KEY_FILE_PATH;
-const port = process.env.SERVER_PORT || 3001;
-
-app.use(cors({ origin: corsOrigin }));
 
 if (!spreadsheetId || !keyFilePath) {
-  console.error('SPREADSHEET_ID и KEY_FILE_PATH должны быть установлены в .env');
+  console.error('SPREADSHEET_ID и KEY_FILE_PATH должны быть установлены в .env файле');
   process.exit(1);
 }
+
+app.use(cors({ origin: corsOrigin }));
 
 const auth = new google.auth.GoogleAuth({
   keyFile: path.resolve(__dirname, keyFilePath),
   scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
 
-const sheets = google.sheets({ version: 'v4', auth });
-
+// Категории
 const categories = [
   'processor', 'graphicsCard', 'ram', 'storage',
   'motherboard', 'case', 'cooler', 'monitor',
   'powerSupply', 'keyboard', 'mouse', 'operatingSystem',
 ];
 
-// Кэш на 60 секунд
-let cachedComponents = null;
-let cachedTemplates = null;
-let lastFetchTime = 0;
-const CACHE_TTL = 60 * 1000;
-
-const componentSchema = {
-  processor: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0, socket: row[4] || '', power: +row[5] || 0
-  }),
-  graphicsCard: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0, power: +row[4] || 0
-  }),
-  ram: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0
-  }),
-  storage: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0
-  }),
-  motherboard: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0, socket: row[4] || '', formFactor: row[5] || ''
-  }),
-  case: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0, formFactor: row[4] || ''
-  }),
-  cooler: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0, socket: row[4] || ''
-  }),
-  monitor: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0, resolution: row[4] || ''
-  }),
-  powerSupply: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0, wattage: +row[4] || 0
-  }),
-  keyboard: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0, type: row[4] || ''
-  }),
-  mouse: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0, type: row[4] || ''
-  }),
-  operatingSystem: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0, version: row[4] || ''
-  }),
-};
-
-// Функция для формирования шаблонов
-const generateTemplates = (components, activeCategories) => {
-  const getCheapest = (category) => components
-    .filter(c => c.category === category && c.price > 0)
-    .sort((a, b) => a.price - b.price)[0];
-
-  const getMidRange = (category) => {
-    const sorted = components
-      .filter(c => c.category === category && c.price > 0)
-      .sort((a, b) => a.performance - b.performance);
-    return sorted[Math.floor(sorted.length / 2)] || sorted[0];
-  };
-
-  const getHighPerformance = (category) => components
-    .filter(c => c.category === category && c.price > 0)
-    .sort((a, b) => b.performance - a.performance)[0];
-
-  const checkCompatibility = (config) => {
-    if (config.motherboard && config.processor && config.motherboard.socket !== config.processor.socket) {
-      return false;
-    }
-    if (config.case && config.motherboard && config.case.formFactor && config.motherboard.formFactor) {
-      const caseFormFactors = String(config.case.formFactor).split(',').map(f => f.trim().toLowerCase());
-      if (!caseFormFactors.includes(String(config.motherboard.formFactor).trim().toLowerCase())) {
-        return false;
-      }
-    }
-    if (config.powerSupply && config.processor) {
-      const requiredPower = (config.processor.power || 0) + (config.graphicsCard?.power || 0) + (config.cooler?.power || 0) + 100;
-      if (config.powerSupply.wattage < requiredPower) {
-        return false;
-      }
-    }
-    return true;
-  };
-
-  const templates = [
-    {
-      id: 'office-pc',
-      name: 'Офисный ПК',
-      description: 'Самый дешёвый вариант для работы с документами и браузером.',
-      components: [
-        getCheapest('processor'),
-        getCheapest('ram'),
-        getCheapest('storage'),
-        getCheapest('motherboard'),
-        getCheapest('case'),
-        getCheapest('powerSupply'),
-      ].filter(Boolean),
-    },
-    {
-      id: 'budget-gaming',
-      name: 'Бюджетный игровой',
-      description: 'Для лёгких игр на низких-средних настройках (CS:GO, Dota 2).',
-      components: [
-        getMidRange('processor'),
-        getCheapest('graphicsCard'),
-        getMidRange('ram'),
-        getMidRange('storage'),
-        getMidRange('motherboard'),
-        getMidRange('case'),
-        getCheapest('cooler'),
-        getMidRange('powerSupply'),
-      ].filter(Boolean),
-    },
-    {
-      id: 'optimal-gaming',
-      name: 'Оптимальный гейминг',
-      description: 'Для современных игр на высоких настройках в 1080p.',
-      components: [
-        getHighPerformance('processor'),
-        getHighPerformance('graphicsCard'),
-        getHighPerformance('ram'),
-        getHighPerformance('storage'),
-        getHighPerformance('motherboard'),
-        getHighPerformance('case'),
-        getHighPerformance('cooler'),
-        getHighPerformance('powerSupply'),
-      ].filter(Boolean),
-    },
-  ];
-
-  return templates
-    .map(template => ({
-      ...template,
-      components: template.components.filter(comp => activeCategories.includes(comp.category)),
-    }))
-    .filter(template => template.components.length > 0 && checkCompatibility({
-      ...template.components.reduce((acc, comp) => ({ ...acc, [comp.category]: comp }), {}),
-    }));
-};
-
-// Эндпоинт для получения компонентов
+// ======================= ЗАГРУЗКА КОМПОНЕНТОВ =======================
 app.get('/api/components', async (req, res) => {
-  const now = Date.now();
-  if (cachedComponents && now - lastFetchTime < CACHE_TTL) {
-    console.log('📦 Отдаём кэшированные компоненты');
-    return res.json(cachedComponents);
-  }
-
+  console.log('📄 Чтение компонентов из Google Sheets');
   try {
-    const authClient = await auth.getClient();
-    const sheetsApi = google.sheets({ version: 'v4', auth: authClient });
-
-    const components = [];
-    const erroredSheets = [];
+    const client = await auth.getClient();
+    const sheets = google.sheets({ version: 'v4', auth: client });
+    const allComponents = [];
 
     for (const category of categories) {
-      const range = `${category}!A2:Z`;
+      const range = `${category}!A2:G`;
       console.log(`📄 Чтение вкладки: ${category}`);
+      const { data } = await sheets.spreadsheets.values.get({ spreadsheetId, range });
+      const rows = data.values || [];
 
-      try {
-        const response = await sheetsApi.spreadsheets.values.get({ spreadsheetId, range });
-        const rows = response.data.values || [];
+      const items = rows.map((row) => ({
+        name: row[0] || '',
+        price: Number(row[1]) || 0,
+        description: row[2] || '',
+        performance: Number(row[3]) || 0,
+        category,
+        socket: row[4] || '',
+        power: Number(row[5]) || 0,
+        integratedGraphics: row[6]?.toLowerCase().includes('true') || false,
+        formFactor: row[5] || '',
+        wattage: Number(row[5]) || 0,
+      })).filter(item => item.name && item.price > 0);
 
-        if (!rows.length) {
-          console.warn(`⚠️ Вкладка ${category} пуста.`);
-          continue;
-        }
-
-        for (let i = 0; i < rows.length; i++) {
-          const row = rows[i];
-          try {
-            const parser = componentSchema[category];
-            if (!parser) continue;
-
-            const component = parser(row);
-            component.category = category;
-
-            if (component.name && component.price > 0) {
-              components.push(component);
-            } else {
-              console.warn(`⛔ Пропущен компонент (пустое имя или цена) в ${category} строка ${i + 2}`);
-            }
-          } catch (parseErr) {
-            console.error(`❌ Ошибка разбора строки ${i + 2} в ${category}:`, parseErr.message);
-          }
-        }
-      } catch (err) {
-        console.error(`❌ Ошибка чтения вкладки ${category}:`, err.message);
-        erroredSheets.push(category);
-      }
+      allComponents.push(...items);
     }
 
-    console.log(`✅ Всего компонентов: ${components.length}`);
-    if (erroredSheets.length) {
-      console.warn(`⚠️ Ошибки во вкладках: ${erroredSheets.join(', ')}`);
-    }
-
-    // Кэшируем компоненты
-    cachedComponents = components;
-    lastFetchTime = Date.now();
-
-    res.json(components);
-  } catch (err) {
-    console.error('❌ Внутренняя ошибка сервера:', err.message);
-    res.status(500).json({ error: 'Ошибка при получении компонентов' });
+    console.log(`✅ Всего компонентов: ${allComponents.length}`);
+    res.json(allComponents);
+  } catch (error) {
+    console.error('❌ Ошибка загрузки компонентов:', error.message);
+    res.status(500).json({ error: 'Ошибка загрузки компонентов' });
   }
 });
 
-// Новый эндпоинт для получения шаблонов
+// ======================= ГЕНЕРАЦИЯ ШАБЛОНОВ =======================
 app.get('/api/templates', async (req, res) => {
-  const now = Date.now();
-  if (cachedTemplates && now - lastFetchTime < CACHE_TTL) {
-    console.log('📦 Отдаём кэшированные шаблоны');
-    return res.json(cachedTemplates);
-  }
+  console.log('📄 Генерация шаблонов из таблицы');
 
   try {
-    const authClient = await auth.getClient();
-    const sheetsApi = google.sheets({ version: 'v4', auth: authClient });
+    const client = await auth.getClient();
+    const sheetsApi = google.sheets({ version: 'v4', auth: client });
 
-    const components = [];
-    const erroredSheets = [];
+    const buildList = {};
 
     for (const category of categories) {
-      const range = `${category}!A2:Z`;
-      console.log(`📄 Чтение вкладки для шаблонов: ${category}`);
+      const range = `${category}!A2:G`;
+      const { data } = await sheetsApi.spreadsheets.values.get({ spreadsheetId, range });
+      const rows = data.values || [];
 
-      try {
-        const response = await sheetsApi.spreadsheets.values.get({ spreadsheetId, range });
-        const rows = response.data.values || [];
+      const items = rows.map((row) => ({
+        name: row[0] || '',
+        price: Number(row[1]) || 0,
+        description: row[2] || '',
+        performance: Number(row[3]) || 0,
+        category,
+        socket: row[4] || '',
+        power: Number(row[5]) || 0,
+        integratedGraphics: row[6]?.toLowerCase().includes('true') || false,
+        formFactor: row[5] || '',
+        wattage: Number(row[5]) || 0,
+      })).filter(item => item.name && item.price > 0);
 
-        if (!rows.length) {
-          console.warn(`⚠️ Вкладка ${category} пуста.`);
-          continue;
-        }
+      buildList[category] = items;
+    }
 
-        for (let i = 0; i < rows.length; i++) {
-          const row = rows[i];
-          try {
-            const parser = componentSchema[category];
-            if (!parser) continue;
+    const buildTemplate = (name, targetBudget) => {
+      const template = { name, description: '', components: [] };
+      const config = {};
 
-            const component = parser(row);
-            component.category = category;
+      const cpuList = buildList.processor.sort((a, b) => a.price - b.price);
+      const mbList = buildList.motherboard;
+      const ramList = buildList.ram;
+      const storageList = buildList.storage;
+      const caseList = buildList.case;
+      const coolerList = buildList.cooler;
+      const monitorList = buildList.monitor;
+      const psuList = buildList.powerSupply;
+      const keyboardList = buildList.keyboard;
+      const mouseList = buildList.mouse;
+      const gpuList = buildList.graphicsCard.sort((a, b) => a.price - b.price);
 
-            if (component.name && component.price > 0) {
-              components.push(component);
-            } else {
-              console.warn(`⛔ Пропущен компонент (пустое имя или цена) в ${category} строка ${i + 2}`);
-            }
-          } catch (parseErr) {
-            console.error(`❌ Ошибка разбора строки ${i + 2} в ${category}:`, parseErr.message);
-          }
-        }
-      } catch (err) {
-        console.error(`❌ Ошибка чтения вкладки ${category}:`, err.message);
-        erroredSheets.push(category);
+      const cpu = cpuList[0];
+      config.processor = cpu;
+      config.motherboard = mbList.find(mb => mb.socket === cpu.socket);
+      config.ram = ramList[0];
+      config.storage = storageList[0];
+
+      config.case = caseList.find(c => {
+        if (!c.formFactor || !config.motherboard?.formFactor) return false;
+        return c.formFactor.toLowerCase().includes(config.motherboard.formFactor.toLowerCase());
+      }) || caseList[0];
+
+      config.cooler = coolerList.find(cooler => {
+        if (!cooler.socket) return false;
+        return cooler.socket.split(',').map(s => s.trim()).includes(cpu.socket);
+      }) || coolerList[0];
+
+      config.monitor = monitorList[0];
+      config.keyboard = keyboardList[0];
+      config.mouse = mouseList[0];
+
+      if (!cpu.integratedGraphics) {
+        config.graphicsCard = gpuList[0];
       }
-    }
 
-    if (components.length === 0) {
-      console.error('❌ Нет компонентов для формирования шаблонов');
-      return res.status(500).json({ error: 'Нет доступных компонентов для шаблонов' });
-    }
+      const requiredPower = (cpu.power || 0) + (config.graphicsCard?.power || 0) + 100;
+      config.powerSupply = psuList.find(psu => psu.wattage >= requiredPower) || psuList[0];
 
-    // Формируем шаблоны
-    const activeCategories = categories.filter(cat => cat !== 'operatingSystem');
-    const templates = generateTemplates(components, activeCategories);
+      template.components = Object.values(config).filter(Boolean);
+      return template;
+    };
+
+    const templates = [
+      buildTemplate('Офисный ПК', 200000),
+      buildTemplate('Бюджетный игровой', 300000),
+      buildTemplate('Оптимальный гейминг', 400000),
+    ];
 
     console.log(`✅ Сформировано шаблонов: ${templates.length}`);
-    if (erroredSheets.length) {
-      console.warn(`⚠️ Ошибки во вкладках: ${erroredSheets.join(', ')}`);
-    }
-
-    // Кэшируем шаблоны
-    cachedTemplates = templates;
-    lastFetchTime = Date.now();
-
     res.json(templates);
   } catch (err) {
-    console.error('❌ Внутренняя ошибка сервера при получении шаблонов:', err.message);
-    res.status(500).json({ error: 'Ошибка при получении шаблонов' });
+    console.error('❌ Ошибка генерации шаблонов:', err.message);
+    res.status(500).json({ error: 'Ошибка генерации шаблонов' });
   }
 });
 
