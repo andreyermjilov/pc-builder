@@ -239,6 +239,49 @@ function PCBuilder() {
     buildConfig({}, 0, 0, 0);
     return results;
   }, [selectedCategories]);
+  // 🔽 Вставь это сразу после generateCombinations
+function generateConfigurationsForTemplate(components, templateLabel, activeCategories) {
+  console.log(`🧠 Генерация шаблона: "${templateLabel}"`);
+
+  const grouped = activeCategories.reduce((acc, category) => {
+    const items = components.filter(c => c.category === category);
+    acc[category] = items;
+    console.log(`📦 Категория "${category}": найдено ${items.length} компонентов`);
+    return acc;
+  }, {});
+
+  const missingCategories = activeCategories.filter(cat => !grouped[cat] || grouped[cat].length === 0);
+  if (missingCategories.length > 0) {
+    console.warn(`❌ Шаблон "${templateLabel}" пропущен: нет компонентов для категорий: ${missingCategories.join(', ')}`);
+    return null;
+  }
+
+  try {
+    const config = {};
+    let totalPrice = 0;
+    let totalPerformance = 0;
+
+    for (const category of activeCategories) {
+      const sorted = grouped[category].sort((a, b) => a.price - b.price);
+      const selected = sorted[0];
+      config[category] = selected;
+      totalPrice += selected.price || 0;
+      totalPerformance += selected.performance || 0;
+    }
+
+    return {
+      name: templateLabel,
+      description: 'Автоматически подобранная конфигурация',
+      components: Object.values(config),
+      totalPrice,
+      totalPerformance
+    };
+
+  } catch (err) {
+    console.error(`❌ Ошибка генерации шаблона "${templateLabel}":`, err.message);
+    return null;
+  }
+}
 
   const handleFilter = () => {
     setFilterClicked(true);
