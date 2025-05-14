@@ -73,7 +73,8 @@ function PCBuilder() {
       case 'graphicsCard':
         score = (Number(component.memory) || 0) * 10 + (parseFloat(component.pcieVersion) || 3.0) * 5;
         break;
-      case Number(component.frequency) || 0) / 100 + (Number(component.capacity) || 0) * 2;
+      case 'ram':
+        score = (Number(component.frequency) || 0) / 100 + (Number(component.capacity) || 0) * 2;
         break;
       case 'storage':
         score = component.interface === 'M.2 NVMe' ? 20 : 10;
