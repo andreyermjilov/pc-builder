@@ -33,6 +33,7 @@ const categories = [
 
 // Кэш на 60 секунд
 let cachedComponents = null;
+let cachedTemplates = null;
 let lastFetchTime = 0;
 const CACHE_TTL = 60 * 1000;
 
@@ -87,10 +88,103 @@ const componentSchema = {
   }),
 };
 
+// Функция для формирования шаблонов
+const generateTemplates = (components, activeCategories) => {
+  const getCheapest = (category) => components
+    .filter(c => c.category === category && c.price > 0)
+    .sort((a, b) => a.price - b.price)[0];
+
+  const getMidRange = (category) => {
+    const sorted = components
+      .filter(c => c.category === category && c.price > 0)
+      .sort((a, b) => a.performance - b.performance);
+    return sorted[Math.floor(sorted.length / 2)] || sorted[0];
+  };
+
+  const getHighPerformance = (category) => components
+    .filter(c => c.category === category && c.price > 0)
+    .sort((a, b) => b.performance - a.performance)[0];
+
+  const checkCompatibility = (config) => {
+    if (config.motherboard && config.processor && config.motherboard.socket !== config.processor.socket) {
+      return false;
+    }
+    if (config.case && config.motherboard && config.case.formFactor && config.motherboard.formFactor) {
+      const caseFormFactors = String(config.case.formFactor).split(',').map(f => f.trim().toLowerCase());
+      if (!caseFormFactors.includes(String(config.motherboard.formFactor).trim().toLowerCase())) {
+        return false;
+      }
+    }
+    if (config.powerSupply && config.processor) {
+      const requiredPower = (config.processor.power || 0) + (config.graphicsCard?.power || 0) + (config.cooler?.power || 0) + 100;
+      if (config.powerSupply.wattage < requiredPower) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const templates = [
+    {
+      id: 'office-pc',
+      name: 'Офисный ПК',
+      description: 'Самый дешёвый вариант для работы с документами и браузером.',
+      components: [
+        getCheapest('processor'),
+        getCheapest('ram'),
+        getCheapest('storage'),
+        getCheapest('motherboard'),
+        getCheapest('case'),
+        getCheapest('powerSupply'),
+      ].filter(Boolean),
+    },
+    {
+      id: 'budget-gaming',
+      name: 'Бюджетный игровой',
+      description: 'Для лёгких игр на низких-средних настройках (CS:GO, Dota 2).',
+      components: [
+        getMidRange('processor'),
+        getCheapest('graphicsCard'),
+        getMidRange('ram'),
+        getMidRange('storage'),
+        getMidRange('motherboard'),
+        getMidRange('case'),
+        getCheapest('cooler'),
+        getMidRange('powerSupply'),
+      ].filter(Boolean),
+    },
+    {
+      id: 'optimal-gaming',
+      name: 'Оптимальный гейминг',
+      description: 'Для современных игр на высоких настройках в 1080p.',
+      components: [
+        getHighPerformance('processor'),
+        getHighPerformance('graphicsCard'),
+        getHighPerformance('ram'),
+        getHighPerformance('storage'),
+        getHighPerformance('motherboard'),
+        getHighPerformance('case'),
+        getHighPerformance('cooler'),
+        getHighPerformance('powerSupply'),
+      ].filter(Boolean),
+    },
+  ];
+
+  return templates
+    .map(template => ({
+      ...template,
+      components: template.components.filter(comp => activeCategories.includes(comp.category)),
+    }))
+    .filter(template => template.components.length > 0 && checkCompatibility({
+      ...template.components.reduce((acc, comp) => ({ ...acc, [comp.category]: comp }), {}),
+    }));
+};
+
+// Эндпоинт для получения компонентов
 app.get('/api/components', async (req, res) => {
   const now = Date.now();
   if (cachedComponents && now - lastFetchTime < CACHE_TTL) {
-    console.log('📦 Отдаём кэшированные данные');
+    console.log('📦 Отдаём кэшированные компоненты');
     return res.json(cachedComponents);
   }
 
@@ -143,59 +237,91 @@ app.get('/api/components', async (req, res) => {
       console.warn(`⚠️ Ошибки во вкладках: ${erroredSheets.join(', ')}`);
     }
 
-    // Кэшируем
+    // Кэшируем компоненты
     cachedComponents = components;
     lastFetchTime = Date.now();
 
-    // === ДОБАВЬ ЭТИ ФУНКЦИИ перед res.json(...) ===
-const getTemplate = (components, strategyFn) => {
-  const byCategory = (category) =>
-    components.filter(c => c.category === category && c.price > 0);
-
-  const pick = (category) => {
-    const items = byCategory(category);
-    if (!items.length) return null;
-    return strategyFn(items);
-  };
-
-  const config = {};
-  ['processor', 'graphicsCard', 'ram', 'storage', 'motherboard', 'case', 'cooler', 'powerSupply'].forEach(cat => {
-    const comp = pick(cat);
-    if (comp) config[cat] = comp;
-  });
-
-  const totalPrice = Object.values(config).reduce((sum, c) => sum + (c?.price || 0), 0);
-  const totalPerformance = Object.values(config).reduce((sum, c) => sum + (c?.performance || 0), 0);
-
-  return { components: config, totalPrice, totalPerformance };
-};
-
-const templates = [
-  {
-    id: 'office',
-    name: 'Офисный ПК',
-    description: 'Самый дешевый вариант для работы',
-    ...getTemplate(components, list => list[0])
-  },
-  {
-    id: 'budget',
-    name: 'Бюджетный игровой',
-    description: 'Для нетребовательных игр',
-    ...getTemplate(components, list => list[Math.floor(list.length / 2)] || list[0])
-  },
-  {
-    id: 'gaming',
-    name: 'Оптимальный гейминг',
-    description: 'Для игр на высоких настройках',
-    ...getTemplate(components, list => list[list.length - 1])
-  }
-];
-
-// === ЗАМЕНИ res.json(...) НА ЭТО: ===
-res.json({ components, templates });
+    res.json(components);
   } catch (err) {
     console.error('❌ Внутренняя ошибка сервера:', err.message);
     res.status(500).json({ error: 'Ошибка при получении компонентов' });
+  }
+});
+
+// Новый эндпоинт для получения шаблонов
+app.get('/api/templates', async (req, res) => {
+  const now = Date.now();
+  if (cachedTemplates && now - lastFetchTime < CACHE_TTL) {
+    console.log('📦 Отдаём кэшированные шаблоны');
+    return res.json(cachedTemplates);
+  }
+
+  try {
+    const authClient = await auth.getClient();
+    const sheetsApi = google.sheets({ version: 'v4', auth: authClient });
+
+    const components = [];
+    const erroredSheets = [];
+
+    for (const category of categories) {
+      const range = `${category}!A2:Z`;
+      console.log(`📄 Чтение вкладки для шаблонов: ${category}`);
+
+      try {
+        const response = await sheetsApi.spreadsheets.values.get({ spreadsheetId, range });
+        const rows = response.data.values || [];
+
+        if (!rows.length) {
+          console.warn(`⚠️ Вкладка ${category} пуста.`);
+          continue;
+        }
+
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          try {
+            const parser = componentSchema[category];
+            if (!parser) continue;
+
+            const component = parser(row);
+            component.category = category;
+
+            if (component.name && component.price > 0) {
+              components.push(component);
+            } else {
+              console.warn(`⛔ Пропущен компонент (пустое имя или цена) в ${category} строка ${i + 2}`);
+            }
+          } catch (parseErr) {
+            console.error(`❌ Ошибка разбора строки ${i + 2} в ${category}:`, parseErr.message);
+          }
+        }
+      } catch (err) {
+        console.error(`❌ Ошибка чтения вкладки ${category}:`, err.message);
+        erroredSheets.push(category);
+      }
+    }
+
+    if (components.length === 0) {
+      console.error('❌ Нет компонентов для формирования шаблонов');
+      return res.status(500).json({ error: 'Нет доступных компонентов для шаблонов' });
+    }
+
+    // Формируем шаблоны
+    const activeCategories = categories.filter(cat => cat !== 'operatingSystem');
+    const templates = generateTemplates(components, activeCategories);
+
+    console.log(`✅ Сформировано шаблонов: ${templates.length}`);
+    if (erroredSheets.length) {
+      console.warn(`⚠️ Ошибки во вкладках: ${erroredSheets.join(', ')}`);
+    }
+
+    // Кэшируем шаблоны
+    cachedTemplates = templates;
+    lastFetchTime = Date.now();
+
+    res.json(templates);
+  } catch (err) {
+    console.error('❌ Внутренняя ошибка сервера при получении шаблонов:', err.message);
+    res.status(500).json({ error: 'Ошибка при получении шаблонов' });
   }
 });
 
