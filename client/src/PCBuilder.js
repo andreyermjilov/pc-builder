@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import './PCBuilder.css';
 
 const PCBuilder = () => {
   const [componentsByCategory, setComponentsByCategory] = useState({});
