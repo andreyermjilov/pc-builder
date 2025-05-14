@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 
 // Объект с переводами категорий на русский язык
 const categoryTranslations = {
@@ -17,9 +17,13 @@ const categoryTranslations = {
 };
 
 const API_BASE_URL = 'https://pc-builder-backend-24zh.onrender.com';
+const COMPONENTS_CACHE_KEY = 'pc_builder_components';
+const TEMPLATES_CACHE_KEY = 'pc_builder_templates';
+const CACHE_TTL = 5 * 60 * 1000; // 5 минут
 
 function PCBuilder() {
   const [components, setComponents] = useState([]);
+  const [templates, setTemplates] = useState([]);
   const [budget, setBudget] = useState('');
   const [configurations, setConfigurations] = useState([]);
   const [closestConfigs, setClosestConfigs] = useState([]);
@@ -55,54 +59,100 @@ function PCBuilder() {
     return normalized;
   };
 
-  // Загрузка компонентов с API
+  // Загрузка кэша
+  const loadCachedData = (key) => {
+    try {
+      const cached = localStorage.getItem(key);
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached);
+        if (Date.now() - timestamp < CACHE_TTL) {
+          console.log(`Загрузка ${key} из кэша`);
+          return data;
+        }
+      }
+    } catch (err) {
+      console.error(`Ошибка чтения кэша ${key}:`, err.message);
+    }
+    return null;
+  };
+
+  // Сохранение в кэш
+  const saveCachedData = (key, data) => {
+    try {
+      localStorage.setItem(key, JSON.stringify({
+        data,
+        timestamp: Date.now(),
+      }));
+      console.log(`Сохранено в кэш: ${key}`);
+    } catch (err) {
+      console.error(`Ошибка сохранения кэша ${key}:`, err.message);
+    }
+  };
+
+  // Загрузка компонентов и шаблонов
   useEffect(() => {
-    const API_URL = `${API_BASE_URL}/api/components`;
-    const fetchComponents = async (attempt = 1, maxAttempts = 5) => {
+    // Загрузка из кэша
+    const cachedComponents = loadCachedData(COMPONENTS_CACHE_KEY);
+    const cachedTemplates = loadCachedData(TEMPLATES_CACHE_KEY);
+    if (cachedComponents) {
+      setComponents(cachedComponents.map(normalizeComponent).filter(item => item.category && item.price > 0 && item.name));
+    }
+    if (cachedTemplates) {
+      setTemplates(cachedTemplates);
+    }
+
+    const fetchData = async (attempt = 1, maxAttempts = 5) => {
       setLoading(true);
       setError(null);
       try {
-        console.log(`Попытка загрузки компонентов (${attempt}/${maxAttempts}) с ${API_URL}...`);
-        const response = await fetch(API_URL, {
+        // Загрузка компонентов
+        const componentsResponse = await fetch(`${API_BASE_URL}/api/components`, {
           signal: AbortSignal.timeout(15000),
         });
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ error: `HTTP ошибка: ${response.status} ${response.statusText}` }));
-          throw new Error(errorData.error || `HTTP ошибка: ${response.status} ${response.statusText}`);
+        if (!componentsResponse.ok) {
+          const errorData = await componentsResponse.json().catch(() => ({ error: `HTTP ошибка: ${componentsResponse.status}` }));
+          throw new Error(errorData.error || `HTTP ошибка: ${componentsResponse.status}`);
         }
-        const data = await response.json();
-        console.log('Загруженные компоненты (raw):', data);
-        if (!Array.isArray(data) || data.length === 0) {
-          setError('Нет доступных компонентов с сервера. Проверьте данные в Google Sheets или настройки сервера.');
-          setComponents([]);
-          return;
+        const componentsData = await componentsResponse.json();
+        if (!Array.isArray(componentsData) || componentsData.length === 0) {
+          throw new Error('Нет доступных компонентов с сервера.');
         }
-        const normalizedData = data
+        const normalizedComponents = componentsData
           .map(normalizeComponent)
           .filter(item => item.category && item.price > 0 && item.name);
-        console.log('Нормализованные и отфильтрованные компоненты:', normalizedData);
-        
-        if (normalizedData.length === 0) {
-          setError('После нормализации компоненты отсутствуют. Проверьте формат данных в Google Sheets или логи сервера.');
-          setComponents([]);
-          return;
+        setComponents(normalizedComponents);
+        saveCachedData(COMPONENTS_CACHE_KEY, normalizedComponents);
+
+        // Загрузка шаблонов
+        const templatesResponse = await fetch(`${API_BASE_URL}/api/templates`, {
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!templatesResponse.ok) {
+          const errorData = await templatesResponse.json().catch(() => ({ error: `HTTP ошибка: ${templatesResponse.status}` }));
+          throw new Error(errorData.error || `HTTP ошибка: ${templatesResponse.status}`);
         }
-        setComponents(normalizedData);
+        const templatesData = await templatesResponse.json();
+        if (!Array.isArray(templatesData)) {
+          throw new Error('Шаблоны не получены с сервера.');
+        }
+        setTemplates(templatesData);
+        saveCachedData(TEMPLATES_CACHE_KEY, templatesData);
       } catch (err) {
         console.error('Ошибка загрузки:', err.message);
         if (attempt < maxAttempts && err.name !== 'AbortError') {
           console.log(`Повторная попытка ${attempt + 1}/${maxAttempts} через 3 секунды...`);
-          setTimeout(() => fetchComponents(attempt + 1, maxAttempts), 3000);
+          setTimeout(() => fetchData(attempt + 1, maxAttempts), 3000);
         } else {
-          setError(`Ошибка загрузки данных: ${err.message}. Проверьте подключение к серверу по ${API_URL} и его логи.`);
-          setComponents([]);
+          setError(`Ошибка загрузки данных: ${err.message}. Проверьте подключение к серверу.`);
+          if (!cachedComponents) setComponents([]);
+          if (!cachedTemplates) setTemplates([]);
         }
       } finally {
         setLoading(false);
       }
     };
 
-    fetchComponents();
+    fetchData();
   }, []);
 
   const handleCategoryToggle = (category) => {
@@ -112,100 +162,6 @@ function PCBuilder() {
     }));
     setFilterClicked(false);
   };
-
-  // Формирование шаблонов
-  const predefinedTemplates = useMemo(() => {
-    if (!components.length) return [];
-
-    const getCheapest = (category) => components
-      .filter(c => c.category === category && c.price > 0)
-      .sort((a, b) => a.price - b.price)[0];
-
-    const getMidRange = (category) => {
-      const sorted = components
-        .filter(c => c.category === category && c.price > 0)
-        .sort((a, b) => a.performance - b.performance);
-      return sorted[Math.floor(sorted.length / 2)] || sorted[0];
-    };
-
-    const getHighPerformance = (category) => components
-      .filter(c => c.category === category && c.price > 0)
-      .sort((a, b) => b.performance - a.performance)[0];
-
-    const checkCompatibility = (config) => {
-      if (config.motherboard && config.processor && config.motherboard.socket !== config.processor.socket) {
-        return false;
-      }
-      if (config.case && config.motherboard && config.case.formFactor && config.motherboard.formFactor) {
-        const caseFormFactors = String(config.case.formFactor).split(',').map(f => f.trim().toLowerCase());
-        if (!caseFormFactors.includes(String(config.motherboard.formFactor).trim().toLowerCase())) {
-          return false;
-        }
-      }
-      if (config.powerSupply && config.processor) {
-        const requiredPower = (config.processor.power || 0) + (config.graphicsCard?.power || 0) + (config.cooler?.power || 0) + 100;
-        if (config.powerSupply.wattage < requiredPower) {
-          return false;
-        }
-      }
-      return true;
-    };
-
-    const templates = [
-      {
-        id: 'office-pc',
-        name: 'Офисный ПК',
-        description: 'Самый дешёвый вариант для работы с документами и браузером.',
-        components: [
-          getCheapest('processor'),
-          getCheapest('ram'),
-          getCheapest('storage'),
-          getCheapest('motherboard'),
-          getCheapest('case'),
-          getCheapest('powerSupply'),
-        ].filter(Boolean),
-      },
-      {
-        id: 'budget-gaming',
-        name: 'Бюджетный игровой',
-        description: 'Для лёгких игр на низких-средних настройках (CS:GO, Dota 2).',
-        components: [
-          getMidRange('processor'),
-          getCheapest('graphicsCard'),
-          getMidRange('ram'),
-          getMidRange('storage'),
-          getMidRange('motherboard'),
-          getMidRange('case'),
-          getCheapest('cooler'),
-          getMidRange('powerSupply'),
-        ].filter(Boolean),
-      },
-      {
-        id: 'optimal-gaming',
-        name: 'Оптимальный гейминг',
-        description: 'Для современных игр на высоких настройках в 1080p.',
-        components: [
-          getHighPerformance('processor'),
-          getHighPerformance('graphicsCard'),
-          getHighPerformance('ram'),
-          getHighPerformance('storage'),
-          getHighPerformance('motherboard'),
-          getHighPerformance('case'),
-          getHighPerformance('cooler'),
-          getHighPerformance('powerSupply'),
-        ].filter(Boolean),
-      },
-    ];
-
-    return templates
-      .map(template => ({
-        ...template,
-        components: template.components.filter(comp => activeCategories.includes(comp.category)),
-      }))
-      .filter(template => template.components.length > 0 && checkCompatibility({
-        ...template.components.reduce((acc, comp) => ({ ...acc, [comp.category]: comp }), {}),
-      }));
-  }, [components, activeCategories]);
 
   // Генерация комбинаций
   const generateCombinations = useCallback((componentsByCategory, maxBudget, currentActiveCategories) => {
@@ -297,10 +253,6 @@ function PCBuilder() {
     setLoading(true);
     setConfigurations([]);
     setClosestConfigs([]);
-
-    console.log('Все компоненты перед фильтрацией:', components);
-    console.log('Бюджет:', maxBudget);
-    console.log('Выбранные категории (для фильтрации):', activeCategories);
 
     if (!components.length) {
       setError('Компоненты не загружены. Проверьте подключение к серверу или обновите страницу.');
@@ -446,41 +398,43 @@ function PCBuilder() {
         )}
 
         {/* Предопределённые шаблоны */}
-        {!loading && !error && !filterClicked && !budget && predefinedTemplates.length > 0 && (
+        {!loading && !error && !filterClicked && !budget && templates.length > 0 && (
           <div className="mt-8">
             <h2 className="text-2xl font-bold mb-4 text-gray-700">📋 Готовые сборки для ваших задач:</h2>
-            {predefinedTemplates.map((template, index) => {
-              const { totalPrice, totalPerformance } = calculateTemplateStats(template);
-              return (
-                <div
-                  key={`template-${index}`}
-                  className="mb-6 p-4 border border-purple-200 rounded-lg bg-purple-50 shadow hover:shadow-md transition-shadow"
-                >
-                  <h3 className="text-xl font-semibold text-purple-600 mb-2">{template.name}</h3>
-                  <p className="text-sm text-gray-600 mb-3">{template.description}</p>
-                  <ul className="space-y-1">
-                    {activeCategories.map((category, i) => {
-                      const component = template.components.find(comp => comp.category === category);
-                      return component ? (
-                        <li key={`${category}-${i}-template`} className="text-sm">
-                          <strong className="text-gray-600">{categoryTranslations[category]}:</strong> {component.name}{' '}
-                          {component.description && <span className="italic text-gray-500">({component.description})</span>}
-                        </li>
-                      ) : null;
-                    })}
-                  </ul>
-                  <p className="font-bold text-md mt-3 text-green-600">
-                    Общая стоимость: {totalPrice.toLocaleString()} ₸
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    Производительность: {totalPerformance} (усл. ед.)
-                  </p>
-                </div>
-              );
-            })}
+            {templates
+              .filter(template => template.components.some(comp => activeCategories.includes(comp.category)))
+              .map((template, index) => {
+                const { totalPrice, totalPerformance } = calculateTemplateStats(template);
+                return (
+                  <div
+                    key={`template-${index}`}
+                    className="mb-6 p-4 border border-purple-200 rounded-lg bg-purple-50 shadow hover:shadow-md transition-shadow"
+                  >
+                    <h3 className="text-xl font-semibold text-purple-600 mb-2">{template.name}</h3>
+                    <p className="text-sm text-gray-600 mb-3">{template.description}</p>
+                    <ul className="space-y-1">
+                      {activeCategories.map((category, i) => {
+                        const component = template.components.find(comp => comp.category === category);
+                        return component ? (
+                          <li key={`${category}-${i}-template`} className="text-sm">
+                            <strong className="text-gray-600">{categoryTranslations[category]}:</strong> {component.name}{' '}
+                            {component.description && <span className="italic text-gray-500">({component.description})</span>}
+                          </li>
+                        ) : null;
+                      })}
+                    </ul>
+                    <p className="font-bold text-md mt-3 text-green-600">
+                      Общая стоимость: {totalPrice.toLocaleString()} ₸
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      Производительность: {totalPerformance} (усл. ед.)
+                    </p>
+                  </div>
+                );
+              })}
           </div>
         )}
-
+        
         {/* Полные конфигурации */}
         {configurations.length > 0 && (
           <div className="mt-8">
