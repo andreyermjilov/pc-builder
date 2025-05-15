@@ -26,46 +26,58 @@ export default function PCBuilder() {
   const categories = Object.keys(categoryTranslations);
 
   useEffect(() => {
+    let isMounted = true;
+
     const fetchComponents = async () => {
       try {
         const response = await fetch(API_URL);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
+
+        if (!isMounted) return;
 
         const normalized = data.map(comp => ({
           ...comp,
           category: comp.category.trim(),
           price: Number(comp.price) || 0,
           score: Number(comp.score) || 0,
-          socket: comp.socket?.trim().toLowerCase() || '',
+          socket: (comp.socket || '').trim().toLowerCase(),
           power: Number(comp.power) || 0,
-          formFactor: comp.formFactor?.trim().toLowerCase() || '',
-          resolution: comp.resolution?.trim() || '',
+          formFactor: (comp.formFactor || '').trim().toLowerCase(),
+          resolution: (comp.resolution || '').trim(),
           wattage: Number(comp.wattage) || 0,
-          type: comp.type?.trim().toLowerCase() || '',
-          version: comp.version?.trim() || '',
+          type: (comp.type || '').trim().toLowerCase(),
+          version: (comp.version || '').trim(),
           frequency: Number(comp.frequency) || 0,
           cores: Number(comp.cores) || 0,
           memory: Number(comp.memory) || 0,
-          ramType: comp.ramType?.trim().toLowerCase() || '',
+          ramType: (comp.ramType || '').trim().toLowerCase(),
           capacity: Number(comp.capacity) || 0,
-          interface: comp.interface?.trim().toLowerCase() || '',
-          supportedFormFactors: comp.supportedFormFactors?.toLowerCase() || '',
-          supportedInterfaces: comp.supportedInterfaces?.toLowerCase() || '',
-          pcieVersion: comp.pcieVersion?.toLowerCase() || '',
+          interface: (comp.interface || '').trim().toLowerCase(),
+          supportedFormFactors: (comp.supportedFormFactors || '').toLowerCase(),
+          supportedInterfaces: (comp.supportedInterfaces || '').toLowerCase(),
+          pcieVersion: (comp.pcieVersion || '').toLowerCase(),
         }));
 
         setComponents(normalized);
         generateBuilds(normalized);
       } catch (err) {
+        if (!isMounted) return;
         console.error('Ошибка загрузки:', err);
-        setError('Не удалось загрузить компоненты.');
+        setError('Не удалось загрузить компоненты. ' + err.message);
+        setComponents([]);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     fetchComponents();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
+
   const groupByCategory = (items) => {
     return categories.reduce((acc, cat) => {
       acc[cat] = items.filter(item => item.category === cat);
@@ -84,14 +96,20 @@ export default function PCBuilder() {
         const ramList = grouped.ram.filter(r => r.ramType === mb.ramType);
         const storageList = grouped.storage.filter(s => mb.supportedInterfaces.includes(s.interface));
         const gpuList = grouped.graphicsCard.filter(gpu => mb.pcieVersion.includes(gpu.pcieVersion));
-        const coolerList = grouped.cooler.filter(cooler => cooler.socket.split(',').map(s => s.trim().toLowerCase()).includes(cpu.socket));
-        const caseList = grouped.case.filter(c => c.supportedFormFactors.includes(mb.formFactor));
-        const totalPower = cpu.power;
+        const coolerList = grouped.cooler.filter(cooler =>
+          cooler.socket
+            .split(',')
+            .map(s => s.trim().toLowerCase())
+            .includes(cpu.socket)
+        );
+        const caseList = grouped.case.filter(c =>
+          c.supportedFormFactors.includes(mb.formFactor)
+        );
 
         for (const ram of ramList) {
           for (const storage of storageList) {
             for (const gpu of gpuList) {
-              const requiredPower = totalPower + gpu.power + 100;
+              const requiredPower = cpu.power + gpu.power + 100;
               const psus = grouped.powerSupply.filter(psu => psu.wattage >= requiredPower);
 
               for (const psu of psus) {
@@ -109,14 +127,13 @@ export default function PCBuilder() {
                     };
 
                     const totalPrice = Object.values(build).reduce((sum, comp) => sum + comp.price, 0);
-                    const result = { ...build, totalPrice };
-
-                    // Совместима?
                     const issues = getCompatibilityIssues(build);
+                    const result = { ...build, totalPrice, issues };
+
                     if (issues.length === 0) {
                       compatible.push(result);
                     } else {
-                      incompatible.push({ ...result, issues });
+                      incompatible.push(result);
                     }
                   }
                 }
@@ -160,6 +177,7 @@ export default function PCBuilder() {
 
     return issues;
   };
+
   return (
     <div className="max-w-5xl mx-auto p-6">
       <h1 className="text-3xl font-bold mb-6 text-center">🖥️ Совместимые сборки ПК</h1>
@@ -179,7 +197,7 @@ export default function PCBuilder() {
               <h3 className="text-xl font-bold text-green-800 mb-3">Сборка #{i + 1}</h3>
               <ul className="space-y-1 text-gray-800 text-sm">
                 {Object.entries(build).map(([cat, comp]) => {
-                  if (cat === 'totalPrice') return null;
+                  if (cat === 'totalPrice' || cat === 'issues') return null;
                   return (
                     <li key={cat}>
                       <strong>{categoryTranslations[cat] || cat}:</strong> {comp.name} — {comp.price.toLocaleString()} ₸
@@ -223,4 +241,5 @@ export default function PCBuilder() {
     </div>
   );
 }
+
 export default PCBuilder;
