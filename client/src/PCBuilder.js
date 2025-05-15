@@ -1,15 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import './PCBuilder.css'; // Подключим стили отдельно
 
-function PCBuilder() {
+export default function PCBuilder() {
   const [components, setComponents] = useState([]);
   const [aiResponse, setAiResponse] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const fetchComponents = async () => {
+    async function fetchComponents() {
       try {
         const res = await axios.get('https://pc-builder-backend-24zh.onrender.com/api/components');
         setComponents(res.data);
@@ -17,7 +16,7 @@ function PCBuilder() {
         console.error('Ошибка при получении компонентов:', err);
         setError('Ошибка при загрузке компонентов.');
       }
-    };
+    }
     fetchComponents();
   }, []);
 
@@ -52,17 +51,26 @@ ${components.map(c => `- [${c.category}] ${c.name} (${c.price} руб): ${c.desc
   };
 
   return (
-    <div className="container">
-      <h1>Сборщик ПК</h1>
-      <button onClick={handleAskAI} disabled={loading}>
+    <div className="max-w-3xl mx-auto p-6 bg-white rounded-lg shadow-md mt-10 font-sans">
+      <h1 className="text-3xl font-bold mb-6 text-center">Сборщик ПК</h1>
+      <button
+        onClick={handleAskAI}
+        disabled={loading}
+        className={`w-full py-3 mb-4 text-white rounded-lg transition-colors duration-300
+          ${loading ? 'bg-gray-500 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}
+      >
         {loading ? 'Обращение к ИИ...' : 'Спросить у ИИ'}
       </button>
 
-      {error && <div className="error">❌ {error}</div>}
+      {error && (
+        <div className="mb-4 text-red-600 font-medium text-center">
+          ❌ {error}
+        </div>
+      )}
 
       {aiResponse && (
-        <div className="ai-response">
-          <h2>Ответ ИИ:</h2>
+        <div className="bg-gray-100 p-4 rounded-lg whitespace-pre-wrap text-gray-900">
+          <h2 className="text-xl font-semibold mb-2">Ответ ИИ:</h2>
           <pre>{aiResponse}</pre>
         </div>
       )}
@@ -70,4 +78,3 @@ ${components.map(c => `- [${c.category}] ${c.name} (${c.price} руб): ${c.desc
   );
 }
 
-export default PCBuilder;
