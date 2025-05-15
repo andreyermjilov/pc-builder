@@ -43,7 +43,7 @@ function PCBuilder() {
       ...item,
       category: item.category ? item.category.trim() : '',
       price: Number(item.price) || 0,
-      performance: Number(item.performance) || 0,
+      score: Number(item.score) || 0,
       socket: item.socket ? String(item.socket).trim() : '',
       power: Number(item.power) || 0,
       formFactor: item.formFactor ? String(item.formFactor).trim() : '',
@@ -51,6 +51,15 @@ function PCBuilder() {
       wattage: Number(item.wattage) || 0,
       type: item.type ? item.type.trim() : '',
       version: item.version ? item.version.trim() : '',
+      frequency: Number(item.frequency) || 0,
+      cores: Number(item.cores) || 0,
+      memory: Number(item.memory) || 0,
+      ramType: item.ramType ? String(item.ramType).trim() : '',
+      capacity: Number(item.capacity) || 0,
+      interface: item.interface ? String(item.interface).trim() : '',
+      supportedFormFactors: item.supportedFormFactors ? String(item.supportedFormFactors).trim() : '',
+      supportedInterfaces: item.supportedInterfaces ? String(item.supportedInterfaces).trim() : '',
+      pcieVersion: item.pcieVersion ? String(item.pcieVersion).trim() : '',
     };
     return normalized;
   };
@@ -124,20 +133,20 @@ function PCBuilder() {
     const getMidRange = (category) => {
       const sorted = components
         .filter(c => c.category === category && c.price > 0)
-        .sort((a, b) => a.performance - b.performance);
+        .sort((a, b) => a.score - b.score);
       return sorted[Math.floor(sorted.length / 2)] || sorted[0];
     };
 
     const getHighPerformance = (category) => components
       .filter(c => c.category === category && c.price > 0)
-      .sort((a, b) => b.performance - a.performance)[0];
+      .sort((a, b) => b.score - a.score)[0];
 
     const checkCompatibility = (config) => {
       if (config.motherboard && config.processor && config.motherboard.socket !== config.processor.socket) {
         return false;
       }
-      if (config.case && config.motherboard && config.case.formFactor && config.motherboard.formFactor) {
-        const caseFormFactors = String(config.case.formFactor).split(',').map(f => f.trim().toLowerCase());
+      if (config.case && config.motherboard && config.case.supportedFormFactors && config.motherboard.formFactor) {
+        const caseFormFactors = String(config.case.supportedFormFactors).split(',').map(f => f.trim().toLowerCase());
         if (!caseFormFactors.includes(String(config.motherboard.formFactor).trim().toLowerCase())) {
           return false;
         }
@@ -145,6 +154,23 @@ function PCBuilder() {
       if (config.powerSupply && config.processor) {
         const requiredPower = (config.processor.power || 0) + (config.graphicsCard?.power || 0) + (config.cooler?.power || 0) + 100;
         if (config.powerSupply.wattage < requiredPower) {
+          return false;
+        }
+      }
+      if (config.motherboard && config.ram && config.motherboard.ramType && config.ram.ramType) {
+        if (config.motherboard.ramType !== config.ram.ramType) {
+          return false;
+        }
+      }
+      if (config.motherboard && config.storage && config.motherboard.supportedInterfaces && config.storage.interface) {
+        const supportedInterfaces = String(config.motherboard.supportedInterfaces).split(',').map(i => i.trim().toLowerCase());
+        if (!supportedInterfaces.includes(String(config.storage.interface).trim().toLowerCase())) {
+          return false;
+        }
+      }
+      if (config.motherboard && config.graphicsCard && config.motherboard.pcieVersion && config.graphicsCard.pcieVersion) {
+        const motherboardPcieVersions = String(config.motherboard.pcieVersion).split(',').map(v => v.trim().toLowerCase());
+        if (!motherboardPcieVersions.includes(String(config.graphicsCard.pcieVersion).trim().toLowerCase())) {
           return false;
         }
       }
@@ -224,10 +250,10 @@ function PCBuilder() {
           return { isCompatible: false, reason: `Cooler ${component.name} (sockets: ${component.socket}) incompatible with Processor ${currentConfig.processor.name} (socket: ${currentConfig.processor.socket})` };
         }
       }
-      if (category === 'case' && currentConfig.motherboard && selectedCategories.case && selectedCategories.motherboard && component.formFactor && currentConfig.motherboard.formFactor) {
-        const caseFormFactors = String(component.formFactor).split(',').map(f => f.trim().toLowerCase());
+      if (category === 'case' && currentConfig.motherboard && selectedCategories.case && selectedCategories.motherboard && component.supportedFormFactors && currentConfig.motherboard.formFactor) {
+        const caseFormFactors = String(component.supportedFormFactors).split(',').map(f => f.trim().toLowerCase());
         if (!caseFormFactors.includes(String(currentConfig.motherboard.formFactor).trim().toLowerCase())) {
-          return { isCompatible: false, reason: `Case ${component.name} (form factors: ${component.formFactor}) incompatible with Motherboard ${currentConfig.motherboard.name} (form factor: ${currentConfig.motherboard.formFactor})` };
+          return { isCompatible: false, reason: `Case ${component.name} (form factors: ${component.supportedFormFactors}) incompatible with Motherboard ${currentConfig.motherboard.name} (form factor: ${currentConfig.motherboard.formFactor})` };
         }
       }
       if (category === 'powerSupply' && selectedCategories.powerSupply && currentConfig.processor && selectedCategories.processor) {
@@ -236,10 +262,27 @@ function PCBuilder() {
           return { isCompatible: false, reason: `Power Supply ${component.name} (wattage: ${component.wattage}W) insufficient for estimated ${requiredPower}W (CPU: ${currentConfig.processor.power}W, GPU: ${currentConfig.graphicsCard?.power || 0}W)` };
         }
       }
+      if (category === 'ram' && currentConfig.motherboard && selectedCategories.ram && selectedCategories.motherboard && component.ramType && currentConfig.motherboard.ramType) {
+        if (component.ramType !== currentConfig.motherboard.ramType) {
+          return { isCompatible: false, reason: `RAM ${component.name} (type: ${component.ramType}) incompatible with Motherboard ${currentConfig.motherboard.name} (type: ${currentConfig.motherboard.ramType})` };
+        }
+      }
+      if (category === 'storage' && currentConfig.motherboard && selectedCategories.storage && selectedCategories.motherboard && component.interface && currentConfig.motherboard.supportedInterfaces) {
+        const supportedInterfaces = String(currentConfig.motherboard.supportedInterfaces).split(',').map(i => i.trim().toLowerCase());
+        if (!supportedInterfaces.includes(String(component.interface).trim().toLowerCase())) {
+          return { isCompatible: false, reason: `Storage ${component.name} (interface: ${component.interface}) incompatible with Motherboard ${currentConfig.motherboard.name} (supported interfaces: ${currentConfig.motherboard.supportedInterfaces})` };
+        }
+      }
+      if (category === 'graphicsCard' && currentConfig.motherboard && selectedCategories.graphicsCard && selectedCategories.motherboard && component.pcieVersion && currentConfig.motherboard.pcieVersion) {
+        const motherboardPcieVersions = String(currentConfig.motherboard.pcieVersion).split(',').map(v => v.trim().toLowerCase());
+        if (!motherboardPcieVersions.includes(String(component.pcieVersion).trim().toLowerCase())) {
+          return { isCompatible: false, reason: `Graphics Card ${component.name} (PCIe: ${component.pcieVersion}) incompatible with Motherboard ${currentConfig.motherboard.name} (PCIe: ${currentConfig.motherboard.pcieVersion})` };
+        }
+      }
       return { isCompatible: true, reason: '' };
     };
 
-    const buildConfig = (currentConfig, categoryIndex, totalPrice, totalPerformance) => {
+    const buildConfig = (currentConfig, categoryIndex, totalPrice, totalScore) => {
       if (results.length >= maxCombinations) {
         console.warn('Достигнут лимит комбинаций:', results.length);
         return;
@@ -249,7 +292,7 @@ function PCBuilder() {
       }
       if (categoryIndex >= currentActiveCategories.length) {
         if (totalPrice > 0 && totalPrice <= maxBudget + 100000) {
-          results.push({ ...currentConfig, totalPrice, totalPerformance });
+          results.push({ ...currentConfig, totalPrice, totalScore });
         }
         return;
       }
@@ -258,7 +301,7 @@ function PCBuilder() {
       const currentCategoryComponents = componentsByCategory[category] || [];
 
       if (currentCategoryComponents.length === 0) {
-        buildConfig(currentConfig, categoryIndex + 1, totalPrice, totalPerformance);
+        buildConfig(currentConfig, categoryIndex + 1, totalPrice, totalScore);
         return;
       }
 
@@ -269,13 +312,13 @@ function PCBuilder() {
         }
 
         const newPrice = totalPrice + component.price;
-        const newPerformance = totalPerformance + (component.performance || 0);
+        const newScore = totalScore + (component.score || 0);
 
         buildConfig(
           { ...currentConfig, [category]: component },
           categoryIndex + 1,
           newPrice,
-          newPerformance
+          newScore
         );
       });
     };
@@ -346,12 +389,12 @@ function PCBuilder() {
 
       setConfigurations(
         fullConfigs
-          .sort((a, b) => b.totalPerformance - a.totalPerformance || a.totalPrice - b.totalPrice)
+          .sort((a, b) => b.totalScore - a.totalScore || a.totalPrice - b.totalPrice)
           .slice(0, 5)
       );
       setClosestConfigs(
         tempClosestConfigs
-          .sort((a, b) => b.totalPerformance - a.totalPerformance || a.totalPrice - b.totalPrice)
+          .sort((a, b) => b.totalScore - a.totalScore || a.totalPrice - b.totalPrice)
           .slice(0, 3)
       );
       setLoading(false);
@@ -361,8 +404,8 @@ function PCBuilder() {
   // Вычисление статистики шаблона
   const calculateTemplateStats = (template) => {
     const totalPrice = template.components.reduce((sum, comp) => sum + (comp.price || 0), 0);
-    const totalPerformance = template.components.reduce((sum, comp) => sum + (comp.performance || 0), 0);
-    return { totalPrice, totalPerformance };
+    const totalScore = template.components.reduce((sum, comp) => sum + (comp.score || 0), 0);
+    return { totalPrice, totalScore };
   };
 
   // JSX рендеринг
@@ -450,7 +493,7 @@ function PCBuilder() {
           <div className="mt-8">
             <h2 className="text-2xl font-bold mb-4 text-gray-700">📋 Готовые сборки для ваших задач:</h2>
             {predefinedTemplates.map((template, index) => {
-              const { totalPrice, totalPerformance } = calculateTemplateStats(template);
+              const { totalPrice, totalScore } = calculateTemplateStats(template);
               return (
                 <div
                   key={`template-${index}`}
@@ -473,7 +516,7 @@ function PCBuilder() {
                     Общая стоимость: {totalPrice.toLocaleString()} ₸
                   </p>
                   <p className="text-sm text-gray-500">
-                    Производительность: {totalPerformance} (усл. ед.)
+                    Производительность: {totalScore} (усл. ед.)
                   </p>
                 </div>
               );
@@ -503,7 +546,7 @@ function PCBuilder() {
                   Общая стоимость: {config.totalPrice.toLocaleString()} ₸
                 </p>
                 <p className="text-sm text-gray-500">
-                  Производительность: {config.totalPerformance} (усл. ед.)
+                  Производительность: {config.totalScore} (усл. ед.)
                 </p>
               </div>
             ))}
@@ -532,7 +575,7 @@ function PCBuilder() {
                   Общая стоимость: {config.totalPrice.toLocaleString()} ₸
                 </p>
                 <p className="text-sm text-gray-500">
-                  Производительность: {config.totalPerformance} (усл. ед.)
+                  Производительность: {config.totalScore} (усл. ед.)
                 </p>
               </div>
             ))}
