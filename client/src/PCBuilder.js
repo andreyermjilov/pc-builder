@@ -27,14 +27,23 @@ function PCBuilder() {
     ...item,
     category: item.category?.trim() || '',
     price: Number(item.price) || 0,
-    performance: Number(item.performance) || 0,
     socket: item.socket?.trim() || '',
     power: Number(item.power) || 0,
+    frequency: Number(item.frequency) || 0,
+    cores: Number(item.cores) || 0,
+    ramType: item.ramType?.trim() || '',
     formFactor: item.formFactor?.trim() || '',
-    resolution: item.resolution?.trim() || '',
+    supportedFormFactors: item.supportedFormFactors?.trim() || '',
+    supportedInterfaces: item.supportedInterfaces?.trim() || '',
+    pcieVersion: item.pcieVersion?.trim() || '',
+    interface: item.interface?.trim() || '',
     wattage: Number(item.wattage) || 0,
     type: item.type?.trim() || '',
     version: item.version?.trim() || '',
+    memory: Number(item.memory) || 0,
+    capacity: Number(item.capacity) || 0,
+    resolution: item.resolution?.trim() || '',
+    description: item.description || ''
   });
 
   useEffect(() => {
@@ -59,21 +68,27 @@ function PCBuilder() {
     const maxCombinations = 1000;
 
     const checkCompatibility = (category, component, config) => {
-      if (category === 'motherboard' && config.processor && component.socket !== config.processor.socket)
-        return false;
+      if (category === 'motherboard' && config.processor) {
+        if (component.socket !== config.processor.socket) return false;
+      }
       if (category === 'ram' && config.motherboard) {
-        const ramType = component.description?.toLowerCase();
-        const mbDesc = config.motherboard.description?.toLowerCase();
-        if (ramType && mbDesc && !mbDesc.includes(ramType)) return false;
+        if (component.ramType !== config.motherboard.ramType) return false;
       }
       if (category === 'cooler' && config.processor) {
         const sockets = (component.socket || '').split(',').map(s => s.trim());
         if (!sockets.includes(config.processor.socket)) return false;
       }
       if (category === 'case' && config.motherboard) {
-        const caseFF = (component.formFactor || '').split(',').map(f => f.trim().toLowerCase());
-        const mbFF = config.motherboard.formFactor?.toLowerCase();
-        if (!caseFF.includes(mbFF)) return false;
+        const supported = (component.supportedFormFactors || '').split(',').map(s => s.trim().toLowerCase());
+        if (!supported.includes(config.motherboard.formFactor?.toLowerCase())) return false;
+      }
+      if (category === 'graphicsCard' && config.motherboard) {
+        if (component.pcieVersion && config.motherboard.pcieVersion &&
+            component.pcieVersion !== config.motherboard.pcieVersion) return false;
+      }
+      if (category === 'storage' && config.motherboard) {
+        const supported = (config.motherboard.supportedInterfaces || '').split(',').map(s => s.trim().toLowerCase());
+        if (!supported.includes(component.interface?.toLowerCase())) return false;
       }
       if (category === 'powerSupply') {
         const totalPower = (config.processor?.power || 0) + (config.graphicsCard?.power || 0) + (config.cooler?.power || 0) + 100;
@@ -91,7 +106,7 @@ function PCBuilder() {
       const cat = categories[index];
       for (const comp of componentsByCategory[cat] || []) {
         if (!checkCompatibility(cat, comp, config)) continue;
-        build({ ...config, [cat]: comp, totalPerformance: (config.totalPerformance || 0) + (comp.performance || 0) }, index + 1);
+        build({ ...config, [cat]: comp }, index + 1);
       }
     };
 
@@ -107,8 +122,9 @@ function PCBuilder() {
       acc[cat] = components.filter(c => c.category === cat);
       return acc;
     }, {});
+
     const configs = generateCombinations(grouped, categories);
-    const top = configs.sort((a, b) => b.totalPerformance - a.totalPerformance).slice(0, 5);
+    const top = configs.slice(0, 5);
     setConfigurations(top);
   }, [components, generateCombinations]);
 
@@ -133,7 +149,6 @@ function PCBuilder() {
                 ) : null;
               })}
             </ul>
-            <p className="text-sm text-gray-600 mt-2">Производительность: {config.totalPerformance}</p>
           </div>
         ))}
 
