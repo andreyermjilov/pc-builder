@@ -6,7 +6,7 @@ const PCBuilder = () => {
   useEffect(() => {
     const fetchComponents = async () => {
       try {
-        const response = await fetch('http://localhost:3001/components');
+        const response = await fetch('http://localhost:3001/api/components');
         if (!response.ok) throw new Error('Ошибка сети');
         const data = await response.json();
         setComponents(data);
