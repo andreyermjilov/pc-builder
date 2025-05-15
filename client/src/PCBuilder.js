@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 
+const API_BASE_URL = 'https://pc-builder-backend-24zh.onrender.com';
 const PCBuilder = () => {
   const [components, setComponents] = useState(null);
 
   useEffect(() => {
     const fetchComponents = async () => {
       try {
-        const response = await fetch('http://localhost:3001/api/components');
+        const response = await fetch(`${API_BASE_URL}/api/components`);
         if (!response.ok) throw new Error('Ошибка сети');
         const data = await response.json();
         setComponents(data);
