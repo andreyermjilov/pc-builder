@@ -29,10 +29,10 @@ export default function PCBuilder() {
       const prompt = `
 Вот список компонентов, доступных для сборки ПК:
 
-${components.map(c => `- [${c.category}] ${c.name} (${c.price} руб): ${c.description}`).join('\n')}
+${components.map(c => `- [${c.category}] ${c.name} (${c.price} тенге): ${c.description}`).join('\n')}
 
 Предложи 3 разных сборки ПК для игр и работы: бюджетную, сбалансированную и продвинутую. Не учитывай операционную систему.
-Выведи каждую сборку в отдельном блоке, с названиями компонентов и итоговой ценой.
+Выведи каждую сборку в отдельном блоке, с названиями компонентов и итоговой ценой. Подбирай компоненты по совместимости.
 `;
 
       const res = await axios.post('https://pc-builder-backend-24zh.onrender.com/api/ask-ai', { prompt });
