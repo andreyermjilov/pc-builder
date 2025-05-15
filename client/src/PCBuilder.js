@@ -223,3 +223,4 @@ export default function PCBuilder() {
     </div>
   );
 }
+export default PCBuilder;
