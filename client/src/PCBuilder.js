@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import './PCBuilder.css'; // Подключим стили отдельно
 
 function PCBuilder() {
   const [components, setComponents] = useState([]);
   const [aiResponse, setAiResponse] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const fetchComponents = async () => {
@@ -13,6 +15,7 @@ function PCBuilder() {
         setComponents(res.data);
       } catch (err) {
         console.error('Ошибка при получении компонентов:', err);
+        setError('Ошибка при загрузке компонентов.');
       }
     };
     fetchComponents();
@@ -20,6 +23,9 @@ function PCBuilder() {
 
   const handleAskAI = async () => {
     setLoading(true);
+    setError('');
+    setAiResponse('');
+
     try {
       const prompt = `
 Вот список компонентов, доступных для сборки ПК:
@@ -31,26 +37,33 @@ ${components.map(c => `- [${c.category}] ${c.name} (${c.price} руб): ${c.desc
 `;
 
       const res = await axios.post('https://pc-builder-backend-24zh.onrender.com/api/ask-ai', { prompt });
-      setAiResponse(res.data.response);
+
+      if (res.data && res.data.response) {
+        setAiResponse(res.data.response);
+      } else {
+        setError('Пустой ответ от ИИ.');
+      }
     } catch (err) {
       console.error('Ошибка при запросе к ИИ:', err);
-      setAiResponse('Ошибка при получении ответа от ИИ.');
+      setError(err.response?.data?.error || 'Ошибка при получении ответа от ИИ.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={{ padding: '20px', fontFamily: 'sans-serif' }}>
+    <div className="container">
       <h1>Сборщик ПК</h1>
       <button onClick={handleAskAI} disabled={loading}>
         {loading ? 'Обращение к ИИ...' : 'Спросить у ИИ'}
       </button>
 
+      {error && <div className="error">❌ {error}</div>}
+
       {aiResponse && (
-        <div style={{ whiteSpace: 'pre-wrap', marginTop: '20px', background: '#f5f5f5', padding: '15px', borderRadius: '8px' }}>
+        <div className="ai-response">
           <h2>Ответ ИИ:</h2>
-          <div>{aiResponse}</div>
+          <pre>{aiResponse}</pre>
         </div>
       )}
     </div>
