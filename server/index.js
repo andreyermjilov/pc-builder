@@ -8,6 +8,8 @@ require('dotenv').config();
 const app = express();
 app.use(express.json());
 
+console.log('🔑 OpenRouter API Key:', process.env.OPENROUTER_API_KEY ? '✅ Найден' : '❌ НЕ найден');
+
 const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:3000';
 const spreadsheetId = process.env.SPREADSHEET_ID;
 const keyFilePath = process.env.KEY_FILE_PATH;
