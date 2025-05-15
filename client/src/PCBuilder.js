@@ -249,12 +249,6 @@ function PCBuilder() {
         if (!coolerSockets.includes(String(currentConfig.processor.socket))) {
           return { isCompatible: false, reason: `Cooler ${component.name} (sockets: ${component.socket}) incompatible with Processor ${currentConfig.processor.name} (socket: ${currentConfig.processor.socket})` };
         }
-        // Check cooler TDP compatibility (assume cooler must support at least CPU power)
-        const cpuPower = currentConfig.processor.power || 0;
-        const coolerTdp = component.power || 100; // Default to 100W if unspecified
-        if (coolerTdp < cpuPower * 0.8) { // Allow 80% of CPU power as minimum
-          return { isCompatible: false, reason: `Cooler ${component.name} (estimated TDP: ${coolerTdp}W) insufficient for Processor ${currentConfig.processor.name} (power: ${cpuPower}W)` };
-        }
       }
       if (category === 'case' && currentConfig.motherboard && selectedCategories.case && selectedCategories.motherboard && component.supportedFormFactors && currentConfig.motherboard.formFactor) {
         const caseFormFactors = String(component.supportedFormFactors).split(',').map(f => f.trim().toLowerCase());
@@ -263,22 +257,14 @@ function PCBuilder() {
         }
       }
       if (category === 'powerSupply' && selectedCategories.powerSupply && currentConfig.processor && selectedCategories.processor) {
-        const requiredPower = (currentConfig.processor.power || 0) + 
-                            (currentConfig.graphicsCard?.power || 0) + 
-                            (currentConfig.ram?.capacity * 5 || 0) + // Assume 5W per GB of RAM
-                            (currentConfig.storage?.interface.includes('NVMe') ? 10 : 5) + // NVMe: 10W, SATA: 5W
-                            150; // Buffer for other components
+        const requiredPower = (currentConfig.processor.power || 0) + (currentConfig.graphicsCard?.power || 0) + 100;
         if (component.wattage < requiredPower) {
-          return { isCompatible: false, reason: `Power Supply ${component.name} (wattage: ${component.wattage}W) insufficient for estimated ${requiredPower}W (CPU: ${currentConfig.processor.power}W, GPU: ${currentConfig.graphicsCard?.power || 0}W, RAM: ${currentConfig.ram?.capacity * 5 || 0}W, Storage: ${currentConfig.storage?.interface.includes('NVMe') ? 10 : 5}W)` };
+          return { isCompatible: false, reason: `Power Supply ${component.name} (wattage: ${component.wattage}W) insufficient for estimated ${requiredPower}W (CPU: ${currentConfig.processor.power}W, GPU: ${currentConfig.graphicsCard?.power || 0}W)` };
         }
       }
       if (category === 'ram' && currentConfig.motherboard && selectedCategories.ram && selectedCategories.motherboard && component.ramType && currentConfig.motherboard.ramType) {
         if (component.ramType !== currentConfig.motherboard.ramType) {
           return { isCompatible: false, reason: `RAM ${component.name} (type: ${component.ramType}) incompatible with Motherboard ${currentConfig.motherboard.name} (type: ${currentConfig.motherboard.ramType})` };
-        }
-        // Filter out ECC or server-specific RAM for consumer motherboards
-        if (component.description.toLowerCase().includes('ecc') || component.description.toLowerCase().includes('registered') || component.description.toLowerCase().includes('для серверов')) {
-          return { isCompatible: false, reason: `RAM ${component.name} is ECC or server-specific, incompatible with consumer Motherboard ${currentConfig.motherboard.name}` };
         }
       }
       if (category === 'storage' && currentConfig.motherboard && selectedCategories.storage && selectedCategories.motherboard && component.interface && currentConfig.motherboard.supportedInterfaces) {
@@ -291,18 +277,6 @@ function PCBuilder() {
         const motherboardPcieVersions = String(currentConfig.motherboard.pcieVersion).split(',').map(v => v.trim().toLowerCase());
         if (!motherboardPcieVersions.includes(String(component.pcieVersion).trim().toLowerCase())) {
           return { isCompatible: false, reason: `Graphics Card ${component.name} (PCIe: ${component.pcieVersion}) incompatible with Motherboard ${currentConfig.motherboard.name} (PCIe: ${currentConfig.motherboard.pcieVersion})` };
-        }
-      }
-      if (category === 'mouse' && selectedCategories.mouse) {
-        // Exclude PS/2 or serial mice
-        if (component.description.toLowerCase().includes('ps/2') || component.description.toLowerCase().includes('serial')) {
-          return { isCompatible: false, reason: `Mouse ${component.name} uses outdated PS/2 or serial interface, incompatible with modern systems` };
-        }
-      }
-      if (category === 'keyboard' && selectedCategories.keyboard) {
-        // Exclude PS/2 keyboards (assuming similar logic, though none in JSON)
-        if (component.description.toLowerCase().includes('ps/2')) {
-          return { isCompatible: false, reason: `Keyboard ${component.name} uses outdated PS/2 interface, incompatible with modern systems` };
         }
       }
       return { isCompatible: true, reason: '' };
