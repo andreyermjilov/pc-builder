@@ -76,12 +76,16 @@ function PCBuilder() {
         const ramType = (component.ramType || '').trim().toUpperCase();
         const mbRamType = (config.motherboard.ramType || '').trim().toUpperCase();
 
+        if (!ramType || !mbRamType) {
+           console.log('⚠️ Один из типов памяти не указан:', component.name, 'или', config.motherboard.name);
+           return false;
+        }
+
         if (ramType !== mbRamType) {
-          console.log('❌ RAM mismatch:', component.name, ramType, '≠', mbRamType, config.motherboard.name);
-          return false;
+           console.log('❌ RAM несовместима по типу:', component.name, '(', ramType, ') ≠', config.motherboard.name, '(', mbRamType, ')');
+           return false;
         }
       }
-
       if (category === 'cooler' && config.processor) {
         const supportedSockets = (component.socket || '').split(',').map(s => s.trim());
         if (!supportedSockets.includes(config.processor.socket)) return false;
