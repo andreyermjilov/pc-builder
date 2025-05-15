@@ -76,7 +76,10 @@ function PCBuilder() {
         const ramType = (component.ramType || '').trim().toUpperCase();
         const mbRamType = (config.motherboard.ramType || '').trim().toUpperCase();
 
-        if (ramType !== mbRamType) return false;
+        if (ramType !== mbRamType) {
+          console.log('❌ RAM mismatch:', component.name, ramType, '≠', mbRamType, config.motherboard.name);
+          return false;
+        }
       }
 
       if (category === 'cooler' && config.processor) {
