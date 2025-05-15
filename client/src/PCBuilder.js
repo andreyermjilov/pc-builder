@@ -38,17 +38,27 @@ ${components.map(c => `- [${c.category}] ${c.name} (${c.price} руб): ${c.desc
       const res = await axios.post('https://pc-builder-backend-24zh.onrender.com/api/ask-ai', { prompt });
 
       if (res.data && res.data.response) {
-        setAiResponse(res.data.response);
-      } else {
-        setError('Пустой ответ от ИИ.');
-      }
-    } catch (err) {
-      console.error('Ошибка при запросе к ИИ:', err);
-      setError(err.response?.data?.error || 'Ошибка при получении ответа от ИИ.');
-    } finally {
-      setLoading(false);
+      setAiResponse(res.data.response);
+    } else {
+      setError('Пустой ответ от ИИ.');
     }
-  };
+  } catch (err) {
+    // Разбор ошибок из axios
+    let message = 'Неизвестная ошибка';
+
+    if (err.response && err.response.data) {
+      // Ошибка с сервера
+      message = err.response.data.error || JSON.stringify(err.response.data);
+    } else if (err.message) {
+      // Ошибка сети или другая
+      message = err.message;
+    }
+
+    setError(`Ошибка при обращении к ИИ: ${message}`);
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="max-w-3xl mx-auto p-6 bg-white rounded-lg shadow-md mt-10 font-sans">
