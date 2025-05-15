@@ -23,70 +23,85 @@ const auth = new google.auth.GoogleAuth({
   scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
 
-const sheets = google.sheets({ version: 'v4', auth });
-
 const categories = [
   'processor', 'graphicsCard', 'ram', 'storage',
   'motherboard', 'case', 'cooler', 'monitor',
   'powerSupply', 'keyboard', 'mouse', 'operatingSystem',
 ];
 
+const parseNumber = val => {
+  const num = parseFloat(val);
+  return isNaN(num) ? 0 : num;
+};
+
+const componentSchema = {
+  processor: row => {
+    const item = {
+      name: row[0] || '', price: parseNumber(row[1]), description: row[2] || '',
+      socket: row[3] || '', power: parseNumber(row[4]),
+      frequency: parseNumber(row[5]), cores: parseNumber(row[6])
+    };
+    item.score = item.frequency * 10 + item.cores;
+    return item;
+  },
+  graphicsCard: row => {
+    const item = {
+      name: row[0] || '', price: parseNumber(row[1]), description: row[2] || '',
+      power: parseNumber(row[3]), memory: parseNumber(row[4]), pcieVersion: row[5] || ''
+    };
+    item.score = item.memory * 10;
+    return item;
+  },
+  ram: row => {
+    const item = {
+      name: row[0] || '', price: parseNumber(row[1]), description: row[2] || '',
+      ramType: row[3] || '', frequency: parseNumber(row[4]), capacity: parseNumber(row[5])
+    };
+    item.score = item.frequency / 100 + item.capacity;
+    return item;
+  },
+  storage: row => ({
+    name: row[0] || '', price: parseNumber(row[1]), description: row[2] || '',
+    interface: row[3] || '', score: 1
+  }),
+  motherboard: row => ({
+    name: row[0] || '', price: parseNumber(row[1]), description: row[2] || '',
+    socket: row[3] || '', formFactor: row[4] || '', ramType: row[5] || '',
+    supportedInterfaces: row[6] || '', pcieVersion: row[7] || '', score: 1
+  }),
+  case: row => ({
+    name: row[0] || '', price: parseNumber(row[1]), description: row[2] || '',
+    supportedFormFactors: row[3] || '', score: 1
+  }),
+  cooler: row => ({
+    name: row[0] || '', price: parseNumber(row[1]), description: row[2] || '',
+    socket: row[3] || '', score: 1
+  }),
+  monitor: row => ({
+    name: row[0] || '', price: parseNumber(row[1]), description: row[2] || '',
+    resolution: row[3] || '', score: 1
+  }),
+  powerSupply: row => ({
+    name: row[0] || '', price: parseNumber(row[1]), description: row[2] || '',
+    wattage: parseNumber(row[3]), score: 1
+  }),
+  keyboard: row => ({
+    name: row[0] || '', price: parseNumber(row[1]), description: row[2] || '',
+    type: row[3] || '', score: 1
+  }),
+  mouse: row => ({
+    name: row[0] || '', price: parseNumber(row[1]), description: row[2] || '',
+    type: row[3] || '', score: 1
+  }),
+  operatingSystem: row => ({
+    name: row[0] || '', price: parseNumber(row[1]), description: row[2] || '',
+    version: row[3] || '', score: 1
+  }),
+};
+
 let cachedComponents = null;
 let lastFetchTime = 0;
 const CACHE_TTL = 60 * 1000;
-
-const componentSchema = {
-  processor: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    socket: row[3] || '', power: +row[4] || 0, frequency: +row[5] || 0,
-    cores: +row[6] || 0
-  }),
-  graphicsCard: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    power: +row[3] || 0, memory: +row[4] || 0, pcieVersion: row[5] || ''
-  }),
-  ram: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    ramType: row[3] || '', frequency: +row[4] || 0, capacity: +row[5] || 0
-  }),
-  storage: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    interface: row[3] || ''
-  }),
-  motherboard: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    socket: row[3] || '', formFactor: row[4] || '', ramType: row[5] || '',
-    supportedInterfaces: row[6] || '', pcieVersion: row[7] || ''
-  }),
-  case: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    supportedFormFactors: row[3] || ''
-  }),
-  cooler: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    socket: row[3] || ''
-  }),
-  monitor: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    resolution: row[3] || ''
-  }),
-  powerSupply: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    wattage: +row[3] || 0
-  }),
-  keyboard: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    type: row[3] || ''
-  }),
-  mouse: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    type: row[3] || ''
-  }),
-  operatingSystem: row => ({
-    name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    version: row[3] || ''
-  }),
-};
 
 app.get('/api/components', async (req, res) => {
   const now = Date.now();
@@ -112,21 +127,20 @@ app.get('/api/components', async (req, res) => {
           component.category = category;
           if (component.name && component.price > 0) components.push(component);
         } catch (e) {
-          console.warn(`Ошибка парсинга ${category}`, e);
+          console.warn(`Ошибка парсинга ${category}:`, e.message);
         }
       }
     }
 
     cachedComponents = components;
     lastFetchTime = now;
-
     res.json(components);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Ошибка сервера' });
+    res.status(500).json({ error: 'Ошибка сервера при получении компонентов' });
   }
 });
 
 app.listen(port, '0.0.0.0', () => {
-  console.log(`🚀 Сервер работает на http://localhost:${port}`);
+  console.log(`🚀 Сервер запущен на http://localhost:${port}`);
 });
