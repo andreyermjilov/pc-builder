@@ -31,7 +31,6 @@ const categories = [
   'powerSupply', 'keyboard', 'mouse', 'operatingSystem',
 ];
 
-// Кэш на 60 секунд
 let cachedComponents = null;
 let lastFetchTime = 0;
 const CACHE_TTL = 60 * 1000;
@@ -39,58 +38,59 @@ const CACHE_TTL = 60 * 1000;
 const componentSchema = {
   processor: row => ({
     name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0, socket: row[4] || '', power: +row[5] || 0
+    socket: row[3] || '', power: +row[4] || 0, frequency: +row[5] || 0,
+    cores: +row[6] || 0
   }),
   graphicsCard: row => ({
     name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0, power: +row[4] || 0
+    power: +row[3] || 0, memory: +row[4] || 0, pcieVersion: row[5] || ''
   }),
   ram: row => ({
     name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0
+    ramType: row[3] || '', frequency: +row[4] || 0, capacity: +row[5] || 0
   }),
   storage: row => ({
     name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0
+    interface: row[3] || ''
   }),
   motherboard: row => ({
     name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0, socket: row[4] || '', formFactor: row[5] || ''
+    socket: row[3] || '', formFactor: row[4] || '', ramType: row[5] || '',
+    supportedInterfaces: row[6] || '', pcieVersion: row[7] || ''
   }),
   case: row => ({
     name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0, formFactor: row[4] || ''
+    supportedFormFactors: row[3] || ''
   }),
   cooler: row => ({
     name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0, socket: row[4] || ''
+    socket: row[3] || ''
   }),
   monitor: row => ({
     name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0, resolution: row[4] || ''
+    resolution: row[3] || ''
   }),
   powerSupply: row => ({
     name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0, wattage: +row[4] || 0
+    wattage: +row[3] || 0
   }),
   keyboard: row => ({
     name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0, type: row[4] || ''
+    type: row[3] || ''
   }),
   mouse: row => ({
     name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0, type: row[4] || ''
+    type: row[3] || ''
   }),
   operatingSystem: row => ({
     name: row[0] || '', price: +row[1] || 0, description: row[2] || '',
-    performance: +row[3] || 0, version: row[4] || ''
+    version: row[3] || ''
   }),
 };
 
 app.get('/api/components', async (req, res) => {
   const now = Date.now();
   if (cachedComponents && now - lastFetchTime < CACHE_TTL) {
-    console.log('📦 Отдаём кэшированные данные');
     return res.json(cachedComponents);
   }
 
@@ -99,58 +99,31 @@ app.get('/api/components', async (req, res) => {
     const sheetsApi = google.sheets({ version: 'v4', auth: authClient });
 
     const components = [];
-    const erroredSheets = [];
 
     for (const category of categories) {
       const range = `${category}!A2:Z`;
-      console.log(`📄 Чтение вкладки: ${category}`);
+      const response = await sheetsApi.spreadsheets.values.get({ spreadsheetId, range });
+      const rows = response.data.values || [];
+      const parser = componentSchema[category];
 
-      try {
-        const response = await sheetsApi.spreadsheets.values.get({ spreadsheetId, range });
-        const rows = response.data.values || [];
-
-        if (!rows.length) {
-          console.warn(`⚠️ Вкладка ${category} пуста.`);
-          continue;
+      for (const row of rows) {
+        try {
+          const component = parser(row);
+          component.category = category;
+          if (component.name && component.price > 0) components.push(component);
+        } catch (e) {
+          console.warn(`Ошибка парсинга ${category}`, e);
         }
-
-        for (let i = 0; i < rows.length; i++) {
-          const row = rows[i];
-          try {
-            const parser = componentSchema[category];
-            if (!parser) continue;
-
-            const component = parser(row);
-            component.category = category;
-
-            if (component.name && component.price > 0) {
-              components.push(component);
-            } else {
-              console.warn(`⛔ Пропущен компонент (пустое имя или цена) в ${category} строка ${i + 2}`);
-            }
-          } catch (parseErr) {
-            console.error(`❌ Ошибка разбора строки ${i + 2} в ${category}:`, parseErr.message);
-          }
-        }
-      } catch (err) {
-        console.error(`❌ Ошибка чтения вкладки ${category}:`, err.message);
-        erroredSheets.push(category);
       }
     }
 
-    console.log(`✅ Всего компонентов: ${components.length}`);
-    if (erroredSheets.length) {
-      console.warn(`⚠️ Ошибки во вкладках: ${erroredSheets.join(', ')}`);
-    }
-
-    // Кэшируем
     cachedComponents = components;
-    lastFetchTime = Date.now();
+    lastFetchTime = now;
 
     res.json(components);
   } catch (err) {
-    console.error('❌ Внутренняя ошибка сервера:', err.message);
-    res.status(500).json({ error: 'Ошибка при получении компонентов' });
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
 
