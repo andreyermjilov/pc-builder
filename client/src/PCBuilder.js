@@ -73,7 +73,10 @@ function PCBuilder() {
       }
 
       if (category === 'ram' && config.motherboard) {
-        if (component.ramType !== config.motherboard.ramType) return false;
+        const ramType = (component.ramType || '').trim().toUpperCase();
+        const mbRamType = (config.motherboard.ramType || '').trim().toUpperCase();
+
+        if (ramType !== mbRamType) return false;
       }
 
       if (category === 'cooler' && config.processor) {
