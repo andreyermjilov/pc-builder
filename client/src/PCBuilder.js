@@ -1,6 +1,4 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { toast } from 'react-toastify';
-import { FaTimes } from 'react-icons/fa';
 
 const PCBuilder = () => {
   const [components, setComponents] = useState([]);
@@ -26,52 +24,67 @@ const PCBuilder = () => {
 
   const activeCategories = Object.keys(selectedCategories).filter(category => selectedCategories[category]);
 
+  // Функция для вычисления score
+  const calculateScore = (component) => {
+    if (component.category === 'processor') {
+      const frequency = +component.frequency || 0;
+      const cores = +component.cores || 0;
+      return frequency * 10 + cores * 5;
+    } else if (component.category === 'graphicsCard') {
+      const memory = +component.memory || 0;
+      return memory * 10;
+    } else if (component.category === 'ram') {
+      const frequency = +component.frequency || 0;
+      const capacity = +component.capacity || 0;
+      return frequency / 100 + capacity;
+    } else {
+      return 1;
+    }
+  };
+
   const fetchComponents = useCallback(async () => {
     try {
       setLoading(true);
       const response = await fetch('/api/components');
       if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
       const data = await response.json();
-      console.log('Загруженные компоненты (raw):', data);
+      console.log('Загруженные компоненты:', data);
 
-      const normalizedData = data.map(item => ({
-        ...item,
-        price: +item.price || 0,
-        socket: item.socket ? String(item.socket).trim() : null,
-        power: item.power ? +item.power : 0,
-        frequency: item.frequency ? +item.frequency : 0,
-        cores: item.cores ? +item.cores : 0,
-        memory: item.memory ? +item.memory : 0,
-        ramType: item.ramType ? String(item.ramType).trim() : null,
-        capacity: item.capacity ? +item.capacity : 0,
-        interface: item.interface ? String(item.interface).trim() : null,
-        formFactor: item.formFactor ? String(item.formFactor).trim() : null,
-        supportedInterfaces: item.supportedInterfaces ? String(item.supportedInterfaces).trim() : null,
-        pcieVersion: item.pcieVersion ? String(item.pcieVersion).trim() : null,
-        supportedFormFactors: item.supportedFormFactors ? String(item.supportedFormFactors).trim() : null,
-        wattage: item.wattage ? +item.wattage : 0,
-        resolution: item.resolution ? String(item.resolution).trim() : null,
-        type: item.type ? String(item.type).trim() : null,
-        version: item.version ? String(item.version).trim() : null,
-        score: +item.score || 1,
-      }));
+      const normalizedData = data.map(item => {
+        const normalized = {
+          ...item,
+          price: +item.price || 0,
+          socket: item.socket ? String(item.socket).trim() : null,
+          power: item.power ? +item.power : 0,
+          frequency: item.frequency ? +item.frequency : 0,
+          cores: item.cores ? +item.cores : 0,
+          memory: item.memory ? +item.memory : 0,
+          ramType: item.ramType ? String(item.ramType).trim() : null,
+          capacity: item.capacity ? +item.capacity : 0,
+          interface: item.interface ? String(item.interface).trim() : null,
+          formFactor: item.formFactor ? String(item.formFactor).trim() : null,
+          supportedInterfaces: item.supportedInterfaces ? String(item.supportedInterfaces).trim() : null,
+          pcieVersion: item.pcieVersion ? String(item.pcieVersion).trim() : null,
+          supportedFormFactors: item.supportedFormFactors ? String(item.supportedFormFactors).trim() : null,
+          wattage: item.wattage ? +item.wattage : 0,
+          resolution: item.resolution ? String(item.resolution).trim() : null,
+          type: item.type ? String(item.type).trim() : null,
+          version: item.version ? String(item.version).trim() : null,
+        };
+        // Пересчитываем score
+        normalized.score = calculateScore(normalized);
+        return normalized;
+      });
 
       const filteredData = normalizedData.filter(item => activeCategories.includes(item.category));
-      console.log('Нормализованные и отфильтрованные компоненты:', filteredData);
-
-      const categoriesWithComponents = [...new Set(filteredData.map(c => c.category))];
-      activeCategories.forEach(category => {
-        if (!categoriesWithComponents.includes(category)) {
-          console.warn(`Нет компонентов для категории ${category} после первичной фильтрации.`);
-        }
-      });
+      console.log('Нормализованные компоненты:', filteredData);
 
       setComponents(filteredData);
       setError(null);
     } catch (err) {
       console.error('Ошибка загрузки:', err);
-      setError('Не удалось загрузить компоненты. Пожалуйста, попробуйте позже.');
-      toast.error('Ошибка загрузки компонентов!');
+      setError('Не удалось загрузить компоненты.');
+      console.log('Ошибка загрузки компонентов!');
     } finally {
       setLoading(false);
     }
@@ -82,44 +95,44 @@ const PCBuilder = () => {
   }, [fetchComponents]);
 
   const checkCompatibility = (category, component, currentConfig) => {
-    if (category === 'motherboard' && currentConfig.processor && selectedCategories.motherboard && selectedCategories.processor) {
+    if (category === 'motherboard' && currentConfig.processor) {
       if (component.socket !== currentConfig.processor.socket) {
-        return { isCompatible: false, reason: `Motherboard ${component.name} (socket: ${component.socket}) incompatible with Processor ${currentConfig.processor.name} (socket: ${currentConfig.processor.socket})` };
+        return { isCompatible: false, reason: `Несовместимый сокет материнской платы: ${component.socket} ≠ ${currentConfig.processor.socket}` };
       }
     }
-    if (category === 'cooler' && currentConfig.processor && selectedCategories.cooler && selectedCategories.processor) {
+    if (category === 'cooler' && currentConfig.processor) {
       const coolerSockets = String(component.socket || '').split(',').map(s => s.trim());
       if (!coolerSockets.includes(String(currentConfig.processor.socket))) {
-        return { isCompatible: false, reason: `Cooler ${component.name} (sockets: ${component.socket || 'none'}) incompatible with Processor ${currentConfig.processor.name} (socket: ${currentConfig.processor.socket})` };
+        return { isCompatible: false, reason: `Кулер не поддерживает сокет процессора: ${currentConfig.processor.socket}` };
       }
     }
-    if (category === 'case' && currentConfig.motherboard && selectedCategories.case && selectedCategories.motherboard && component.supportedFormFactors && currentConfig.motherboard.formFactor) {
+    if (category === 'case' && currentConfig.motherboard && component.supportedFormFactors && currentConfig.motherboard.formFactor) {
       const caseFormFactors = String(component.supportedFormFactors).split(',').map(f => f.trim().toLowerCase());
       if (!caseFormFactors.includes(String(currentConfig.motherboard.formFactor).trim().toLowerCase())) {
-        return { isCompatible: false, reason: `Case ${component.name} (form factors: ${component.supportedFormFactors}) incompatible with Motherboard ${currentConfig.motherboard.name} (form factor: ${currentConfig.motherboard.formFactor})` };
+        return { isCompatible: false, reason: `Корпус не поддерживает форм-фактор материнской платы: ${currentConfig.motherboard.formFactor}` };
       }
     }
-    if (category === 'powerSupply' && selectedCategories.powerSupply && currentConfig.processor && selectedCategories.processor) {
+    if (category === 'powerSupply' && currentConfig.processor) {
       const requiredPower = ((currentConfig.processor.power || 0) + (currentConfig.graphicsCard?.power || 0) + 100) * 1.2;
       if (component.wattage < requiredPower) {
-        return { isCompatible: false, reason: `Power Supply ${component.name} (wattage: ${component.wattage}W) insufficient for estimated ${requiredPower}W (CPU: ${currentConfig.processor.power}W, GPU: ${currentConfig.graphicsCard?.power || 0}W)` };
+        return { isCompatible: false, reason: `Недостаточная мощность блока питания: ${component.wattage}W < ${requiredPower}W` };
       }
     }
-    if (category === 'ram' && currentConfig.motherboard && selectedCategories.ram && selectedCategories.motherboard) {
+    if (category === 'ram' && currentConfig.motherboard) {
       if (!component.ramType || !currentConfig.motherboard.ramType || component.ramType !== currentConfig.motherboard.ramType) {
-        return { isCompatible: false, reason: `RAM ${component.name} (type: ${component.ramType || 'none'}) incompatible with Motherboard ${currentConfig.motherboard.name} (type: ${currentConfig.motherboard.ramType || 'none'})` };
+        return { isCompatible: false, reason: `Тип RAM несовместим с материнской платой: ${component.ramType || 'none'} ≠ ${currentConfig.motherboard.ramType || 'none'}` };
       }
     }
-    if (category === 'storage' && currentConfig.motherboard && selectedCategories.storage && selectedCategories.motherboard && component.interface && currentConfig.motherboard.supportedInterfaces) {
+    if (category === 'storage' && currentConfig.motherboard && component.interface && currentConfig.motherboard.supportedInterfaces) {
       const supportedInterfaces = String(currentConfig.motherboard.supportedInterfaces).split(',').map(i => i.trim().toLowerCase());
       if (!supportedInterfaces.includes(String(component.interface).trim().toLowerCase())) {
-        return { isCompatible: false, reason: `Storage ${component.name} (interface: ${component.interface}) incompatible with Motherboard ${currentConfig.motherboard.name} (supported interfaces: ${currentConfig.motherboard.supportedInterfaces})` };
+        return { isCompatible: false, reason: `Интерфейс накопителя не поддерживается: ${component.interface}` };
       }
     }
-    if (category === 'graphicsCard' && currentConfig.motherboard && selectedCategories.graphicsCard && selectedCategories.motherboard && component.pcieVersion && currentConfig.motherboard.pcieVersion) {
+    if (category === 'graphicsCard' && currentConfig.motherboard && component.pcieVersion && currentConfig.motherboard.pcieVersion) {
       const motherboardPcieVersions = String(currentConfig.motherboard.pcieVersion).split(',').map(v => v.trim().toLowerCase());
       if (!motherboardPcieVersions.includes(String(component.pcieVersion).trim().toLowerCase())) {
-        return { isCompatible: false, reason: `Graphics Card ${component.name} (PCIe: ${component.pcieVersion}) incompatible with Motherboard ${currentConfig.motherboard.name} (PCIe: ${currentConfig.motherboard.pcieVersion})` };
+        return { isCompatible: false, reason: `PCIe версии несовместимы: ${component.pcieVersion} ≠ ${currentConfig.motherboard.pcieVersion}` };
       }
     }
     return { isCompatible: true, reason: '' };
@@ -156,7 +169,7 @@ const PCBuilder = () => {
           generate(currentConfig, categoriesToFill, index + 1);
           currentConfig[category] = null;
         } else {
-          console.log(`Исключён компонент ${component.name} для категории ${category}: ${compatibility.reason}`);
+          console.log(`Исключён: ${component.name} (${category}): ${compatibility.reason}`);
         }
       }
 
@@ -171,7 +184,7 @@ const PCBuilder = () => {
       return b.totalScore - a.totalScore || diversityA - diversityB || a.totalPrice - b.totalPrice;
     });
 
-    console.log('Сгенерированные комбинации:', results);
+    console.log('Комбинации:', results);
     return results.slice(0, 10);
   }, [components, activeCategories]);
 
@@ -191,20 +204,16 @@ const PCBuilder = () => {
 
   const predefinedTemplates = useMemo(() => {
     if (!components.length) {
-      console.log('Компоненты не загружены, шаблоны не генерируются');
+      console.log('Компоненты не загружены');
       return [];
     }
     console.log('Генерация шаблонов...');
-    console.log('Доступные компоненты по категориям:', components.reduce((acc, c) => {
-      acc[c.category] = (acc[c.category] || 0) + 1;
-      return acc;
-    }, {}));
 
     const templates = [
       {
         id: 'gaming-pc',
         name: 'Игровой ПК',
-        description: 'Для современных игр с высоким FPS',
+        description: 'Для современных игр',
         components: [
           components.find(c => c.category === 'processor' && c.score >= 100),
           components.find(c => c.category === 'graphicsCard' && c.memory >= 8),
@@ -222,7 +231,7 @@ const PCBuilder = () => {
       {
         id: 'office-pc',
         name: 'Офисный ПК',
-        description: 'Для работы и повседневных задач',
+        description: 'Для работы',
         components: [
           components.find(c => c.category === 'processor' && c.score <= 60),
           getCheapest('ram'),
@@ -253,16 +262,6 @@ const PCBuilder = () => {
           getCheapest('mouse'),
         ].filter(Boolean),
       },
-      {
-        id: 'test-template',
-        name: 'Тестовый шаблон',
-        description: 'Для отладки',
-        components: [
-          getCheapest('processor'),
-          getCheapest('ram'),
-          getCheapest('motherboard'),
-        ].filter(Boolean),
-      },
     ];
 
     const filteredTemplates = templates
@@ -275,17 +274,14 @@ const PCBuilder = () => {
         const isValid = template.components.length > 0 && Object.keys(config).every(category => {
           const compatibility = checkCompatibility(category, config[category], config);
           if (!compatibility.isCompatible) {
-            console.log(`Шаблон ${template.name} исключён для ${category}: ${compatibility.reason}`);
+            console.log(`Шаблон ${template.name} исключён: ${compatibility.reason}`);
           }
           return compatibility.isCompatible;
         });
-        if (!isValid) {
-          console.log(`Шаблон ${template.name} исключён из-за несовместимости`);
-        }
         return isValid;
       });
 
-    console.log('Финальные шаблоны:', filteredTemplates);
+    console.log('Шаблоны:', filteredTemplates);
     return filteredTemplates;
   }, [components, activeCategories]);
 
@@ -293,7 +289,7 @@ const PCBuilder = () => {
     setFilterClicked(true);
     const newCombinations = generateCombinations();
     setCombinations(newCombinations);
-    toast.success('Конфигурации обновлены!');
+    console.log('Конфигурации обновлены!');
   };
 
   const handleCategoryToggle = (category) => {
@@ -321,7 +317,7 @@ const PCBuilder = () => {
       operatingSystem: false,
     });
     setCombinations([]);
-    toast.info('Фильтры сброшены!');
+    console.log('Фильтры сброшены!');
   };
 
   const formatPrice = (price) => {
@@ -334,7 +330,7 @@ const PCBuilder = () => {
 
   return (
     <div className="container mx-auto p-4 max-w-7xl">
-      <h1 className="text-3xl font-bold mb-6 text-center text-gray-800">PC Builder</h1>
+      <h1 className="text-3xl font-bold mb-6 text-center text-gray-800">Сборщик ПК</h1>
 
       <div className="mb-6 p-4 bg-white rounded-lg shadow-md">
         <div className="flex flex-col sm:flex-row gap-4 mb-4">
@@ -366,7 +362,7 @@ const PCBuilder = () => {
 
         <div className="flex flex-wrap gap-2">
           {Object.keys(selectedCategories).map(category => (
-            <label key={category} className="inline-flex items-center">
+            <div key={category} className="inline-flex items-center bg-gray-100 rounded-full px-3 py-1">
               <input
                 type="checkbox"
                 checked={selectedCategories[category]}
@@ -374,7 +370,15 @@ const PCBuilder = () => {
                 className="form-checkbox h-5 w-5 text-blue-600"
               />
               <span className="ml-2 text-sm text-gray-700 capitalize">{category}</span>
-            </label>
+              {selectedCategories[category] && (
+                <span
+                  onClick={() => handleCategoryToggle(category)}
+                  className="ml-2 text-gray-500 cursor-pointer hover:text-gray-700"
+                >
+                  ×
+                </span>
+              )}
+            </div>
           ))}
         </div>
       </div>
@@ -382,10 +386,10 @@ const PCBuilder = () => {
       {loading && <p className="text-center text-gray-600">Загрузка компонентов...</p>}
       {error && <p className="text-center text-red-600">{error}</p>}
 
-      {console.log('Состояние перед рендерингом шаблонов:', { loading, error, filterClicked, budget, templateCount: predefinedTemplates.length })}
-      {!loading && !error && predefinedTemplates.length > 0 && !filterClicked && !budget && (
+      {console.log('Состояние шаблонов:', { loading, error, filterClicked, budget, templateCount: predefinedTemplates.length })}
+      {!loading && !error && predefinedTemplates.length > 0 && (
         <div className="mt-8">
-          <h2 className="text-2xl font-bold mb-4 text-gray-700">📋 Готовые сборки для ваших задач:</h2>
+          <h2 className="text-2xl font-bold mb-4 text-gray-700">📋 Готовые сборки:</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {predefinedTemplates.map(template => (
               <div key={template.id} className="p-4 bg-white rounded-lg shadow-md">
@@ -422,7 +426,7 @@ const PCBuilder = () => {
                     <h4 className="text-lg font-semibold text-gray-800">Сборка #{index + 1}</h4>
                     <ul className="list-disc pl-5 mb-4">
                       {Object.entries(config).map(([category, comp]) => (
-                        comp && (
+                        comp && category !== 'totalPrice' && category !== 'totalScore' && (
                           <li key={category} className="text-gray-700">
                             {category}: {comp.name} ({formatPrice(comp.price)})
                           </li>
@@ -445,7 +449,7 @@ const PCBuilder = () => {
                     <h4 className="text-lg font-semibold text-gray-800">Сборка #{index + 1} (альтернатива)</h4>
                     <ul className="list-disc pl-5 mb-4">
                       {Object.entries(config).map(([category, comp]) => (
-                        comp && (
+                        comp && category !== 'totalPrice' && category !== 'totalScore' && (
                           <li key={category} className="text-gray-700">
                             {category}: {comp.name} ({formatPrice(comp.price)})
                           </li>
