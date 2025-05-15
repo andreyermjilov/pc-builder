@@ -5,12 +5,15 @@ const path = require('path');
 require('dotenv').config();
 
 const app = express();
-const port = process.env.SERVER_PORT || 3001;
+const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:3000';
 const spreadsheetId = process.env.SPREADSHEET_ID;
 const keyFilePath = process.env.KEY_FILE_PATH;
+const port = process.env.SERVER_PORT || 3001;
+
+app.use(cors({ origin: corsOrigin }));
 
 if (!spreadsheetId || !keyFilePath) {
-  console.error('SPREADSHEET_ID и KEY_FILE_PATH должны быть установлены в .env');
+  console.error('SPREADSHEET_ID и KEY_FILE_PATH должны быть установлены в .env файле');
   process.exit(1);
 }
 
@@ -21,74 +24,96 @@ const auth = new google.auth.GoogleAuth({
 
 const sheets = google.sheets({ version: 'v4', auth });
 
-const corsOrigin = process.env.CORS_ORIGIN || '*';
-app.use(cors({ origin: corsOrigin }));
-
 const categories = [
-  'processor', 'graphicsCard', 'ram', 'storage',
-  'motherboard', 'case', 'cooler', 'monitor',
-  'powerSupply', 'keyboard', 'mouse', 'operatingSystem'
+  'processor', 'graphicsCard', 'ram', 'storage', 'motherboard',
+  'case', 'cooler', 'monitor', 'powerSupply', 'keyboard', 'mouse', 'operatingSystem'
 ];
 
-// Универсальная обработка строк с вычислением score
-const calculateScore = (category, row) => {
-  const num = (i) => Number(row[i]) || 0;
-  switch (category) {
-    case 'processor':
-      return num(6) * 10 + num(7) * 5;
-    case 'graphicsCard':
-      return num(5) * 10;
-    case 'ram':
-      return num(5) / 100 + num(6);
-    default:
-      return 1;
-  }
+const componentSchema = {
+  processor: row => ({
+    name: row[0] || '', price: Number(row[1]) || 0, description: row[2] || '',
+    frequency: Number(row[3]) || 0, cores: Number(row[4]) || 0, socket: row[5] || '',
+    power: Number(row[6]) || 0, integratedGraphics: row[7] || '',
+    score: (Number(row[3]) || 0) * 10 + (Number(row[4]) || 0) * 5
+  }),
+  graphicsCard: row => ({
+    name: row[0] || '', price: Number(row[1]) || 0, description: row[2] || '',
+    memory: Number(row[3]) || 0, power: Number(row[4]) || 0,
+    score: (Number(row[3]) || 0) * 10
+  }),
+  ram: row => ({
+    name: row[0] || '', price: Number(row[1]) || 0, description: row[2] || '',
+    frequency: Number(row[3]) || 0, capacity: Number(row[4]) || 0,
+    score: (Number(row[3]) || 0) / 100 + (Number(row[4]) || 0)
+  }),
+  storage: row => ({
+    name: row[0] || '', price: Number(row[1]) || 0, description: row[2] || '',
+    score: 1
+  }),
+  motherboard: row => ({
+    name: row[0] || '', price: Number(row[1]) || 0, description: row[2] || '',
+    socket: row[3] || '', formFactor: row[4] || '',
+    score: 1
+  }),
+  case: row => ({
+    name: row[0] || '', price: Number(row[1]) || 0, description: row[2] || '',
+    formFactor: row[3] || '', score: 1
+  }),
+  cooler: row => ({
+    name: row[0] || '', price: Number(row[1]) || 0, description: row[2] || '',
+    socket: row[3] || '', score: 1
+  }),
+  monitor: row => ({
+    name: row[0] || '', price: Number(row[1]) || 0, description: row[2] || '',
+    resolution: row[3] || '', score: 1
+  }),
+  powerSupply: row => ({
+    name: row[0] || '', price: Number(row[1]) || 0, description: row[2] || '',
+    wattage: Number(row[3]) || 0, score: 1
+  }),
+  keyboard: row => ({
+    name: row[0] || '', price: Number(row[1]) || 0, description: row[2] || '',
+    type: row[3] || '', score: 1
+  }),
+  mouse: row => ({
+    name: row[0] || '', price: Number(row[1]) || 0, description: row[2] || '',
+    type: row[3] || '', score: 1
+  }),
+  operatingSystem: row => ({
+    name: row[0] || '', price: Number(row[1]) || 0, description: row[2] || '',
+    version: row[3] || '', score: 1
+  }),
 };
 
 app.get('/api/components', async (req, res) => {
   try {
+    const client = await auth.getClient();
+    const sheetsApi = google.sheets({ version: 'v4', auth: client });
     const components = [];
 
     for (const category of categories) {
       const range = `${category}!A2:Z`;
-      const response = await sheets.spreadsheets.values.get({ spreadsheetId, range });
+      const response = await sheetsApi.spreadsheets.values.get({ spreadsheetId, range });
       const rows = response.data.values || [];
-
       rows.forEach((row, index) => {
-        if (!row[0] || !row[1]) return;
-        const component = {
-          name: row[0],
-          price: Number(row[1]) || 0,
-          description: row[2] || '',
-          category,
-          socket: row[4] || '',
-          power: Number(row[5]) || 0,
-          formFactor: row[6] || '',
-          resolution: row[7] || '',
-          wattage: Number(row[8]) || 0,
-          type: row[9] || '',
-          version: row[10] || '',
-          frequency: Number(row[11]) || 0,
-          cores: Number(row[12]) || 0,
-          memory: Number(row[13]) || 0,
-          capacity: Number(row[14]) || 0,
-          integratedGraphics: row[15]?.toLowerCase() === 'yes',
-        };
-        component.score = calculateScore(category, row);
-
-        if (component.name && component.price > 0) {
-          components.push(component);
+        if (componentSchema[category]) {
+          const item = componentSchema[category](row);
+          item.category = category;
+          if (item.name && item.price > 0) {
+            components.push(item);
+          }
         }
       });
     }
 
+    console.log('✅ Всего компонентов:', components.length);
     res.json(components);
-  } catch (err) {
-    console.error('Ошибка API:', err.message);
-    res.status(500).json({ error: 'Ошибка сервера при загрузке компонентов.' });
+  } catch (error) {
+    console.error('Ошибка сервера:', error);
+    res.status(500).send('Ошибка сервера');
   }
 });
 
-app.listen(port, '0.0.0.0', () => {
-  console.log(`🚀 Сервер запущен на порту ${port}`);
+app.listen(port, () => {
+  console.log(`🚀 Сервер работает на http://localhost:${port}`);
 });
