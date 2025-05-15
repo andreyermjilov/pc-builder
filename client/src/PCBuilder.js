@@ -71,29 +71,40 @@ function PCBuilder() {
       if (category === 'motherboard' && config.processor) {
         if (component.socket !== config.processor.socket) return false;
       }
+
       if (category === 'ram' && config.motherboard) {
         if (component.ramType !== config.motherboard.ramType) return false;
       }
+
       if (category === 'cooler' && config.processor) {
-        const sockets = (component.socket || '').split(',').map(s => s.trim());
-        if (!sockets.includes(config.processor.socket)) return false;
+        const supportedSockets = (component.socket || '').split(',').map(s => s.trim());
+        if (!supportedSockets.includes(config.processor.socket)) return false;
       }
+
       if (category === 'case' && config.motherboard) {
-        const supported = (component.supportedFormFactors || '').split(',').map(s => s.trim().toLowerCase());
-        if (!supported.includes(config.motherboard.formFactor?.toLowerCase())) return false;
+        const supportedFormFactors = (component.supportedFormFactors || '').split(',').map(f => f.trim().toLowerCase());
+        if (!supportedFormFactors.includes(config.motherboard.formFactor?.toLowerCase())) return false;
       }
+
       if (category === 'graphicsCard' && config.motherboard) {
         if (component.pcieVersion && config.motherboard.pcieVersion &&
             component.pcieVersion !== config.motherboard.pcieVersion) return false;
       }
+
       if (category === 'storage' && config.motherboard) {
-        const supported = (config.motherboard.supportedInterfaces || '').split(',').map(s => s.trim().toLowerCase());
-        if (!supported.includes(component.interface?.toLowerCase())) return false;
+        const supportedInterfaces = (config.motherboard.supportedInterfaces || '').split(',').map(s => s.trim().toLowerCase());
+        if (!supportedInterfaces.includes(component.interface?.toLowerCase())) return false;
       }
+
       if (category === 'powerSupply') {
-        const totalPower = (config.processor?.power || 0) + (config.graphicsCard?.power || 0) + (config.cooler?.power || 0) + 100;
+        const totalPower =
+          (config.processor?.power || 0) +
+          (config.graphicsCard?.power || 0) +
+          (config.cooler?.power || 0) +
+          100;
         if (component.wattage < totalPower) return false;
       }
+
       return true;
     };
 
@@ -103,6 +114,7 @@ function PCBuilder() {
         results.push(config);
         return;
       }
+
       const cat = categories[index];
       for (const comp of componentsByCategory[cat] || []) {
         if (!checkCompatibility(cat, comp, config)) continue;
