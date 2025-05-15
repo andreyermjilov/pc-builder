@@ -2,9 +2,11 @@ const express = require('express');
 const { google } = require('googleapis');
 const cors = require('cors');
 const path = require('path');
+const axios = require('axios');
 require('dotenv').config();
 
 const app = express();
+app.use(express.json());
 
 const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:3000';
 const spreadsheetId = process.env.SPREADSHEET_ID;
@@ -14,13 +16,13 @@ const port = process.env.SERVER_PORT || 3001;
 app.use(cors({ origin: corsOrigin }));
 
 if (!spreadsheetId || !keyFilePath) {
-  console.error('SPREADSHEET_ID и KEY_FILE_PATH должны быть установлены в .env');
+  console.error('❌ SPREADSHEET_ID и KEY_FILE_PATH должны быть установлены в .env');
   process.exit(1);
 }
 
 const auth = new google.auth.GoogleAuth({
   keyFile: path.resolve(__dirname, keyFilePath),
-  scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
 });
 
 const categories = [
@@ -99,10 +101,12 @@ const componentSchema = {
   }),
 };
 
+// Кеширование
 let cachedComponents = null;
 let lastFetchTime = 0;
 const CACHE_TTL = 60 * 1000;
 
+// Получение компонентов из Google Sheets
 app.get('/api/components', async (req, res) => {
   const now = Date.now();
   if (cachedComponents && now - lastFetchTime < CACHE_TTL) {
@@ -136,11 +140,39 @@ app.get('/api/components', async (req, res) => {
     lastFetchTime = now;
     res.json(components);
   } catch (err) {
-    console.error(err);
+    console.error('Ошибка при получении компонентов:', err);
     res.status(500).json({ error: 'Ошибка сервера при получении компонентов' });
   }
 });
 
+// Отправка данных в GPT через OpenRouter
+app.post('/api/ask-ai', async (req, res) => {
+  const { prompt } = req.body;
+
+  if (!prompt) return res.status(400).json({ error: 'Prompt не указан' });
+
+  try {
+    const response = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model: 'openai/gpt-3.5-turbo',
+        messages: [{ role: 'user', content: prompt }],
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    res.json({ response: response.data.choices[0].message.content });
+  } catch (err) {
+    console.error('Ошибка при запросе к OpenRouter:', err?.response?.data || err.message);
+    res.status(500).json({ error: 'Ошибка при обращении к ИИ' });
+  }
+});
+
 app.listen(port, '0.0.0.0', () => {
-  console.log(`🚀 Сервер запущен на http://localhost:${port}`);
+  console.log(`🚀 Сервер запущен: http://localhost:${port}`);
 });
