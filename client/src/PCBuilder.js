@@ -29,7 +29,28 @@ export default function PCBuilder() {
       const prompt = `
 Вот список компонентов, доступных для сборки ПК:
 
-${components.map(c => `- [${c.category}] ${c.name} (${c.price} тенге): ${c.description}`).join('\n')}
+${components.map(c => {
+  // Формируем строку с основными свойствами в одном формате
+  let details = `- [${c.category}] ${c.name} (${c.price} тенге): ${c.description}\n`;
+  if (c.category === 'processor') {
+    details += `  socket: ${c.socket}, power: ${c.power}, frequency: ${c.frequency}, cores: ${c.cores}\n`;
+  } else if (c.category === 'motherboard') {
+    details += `  socket: ${c.socket}, ramType: ${c.ramType}, formFactor: ${c.formFactor}, supportedInterfaces: ${c.supportedInterfaces}, pcieVersion: ${c.pcieVersion}\n`;
+  } else if (c.category === 'ram') {
+    details += `  ramType: ${c.ramType}, frequency: ${c.frequency}, capacity: ${c.capacity}\n`;
+  } else if (c.category === 'storage') {
+    details += `  interface: ${c.interface}\n`;
+  } else if (c.category === 'graphicsCard') {
+    details += `  pcieVersion: ${c.pcieVersion}, memory: ${c.memory}, power: ${c.power}\n`;
+  } else if (c.category === 'cooler') {
+    details += `  socket: ${c.socket}\n`;
+  } else if (c.category === 'case') {
+    details += `  supportedFormFactors: ${c.supportedFormFactors}\n`;
+  } else if (c.category === 'powerSupply') {
+    details += `  wattage: ${c.wattage}\n`;
+  }
+  return details;
+}).join('\n')}
 
 Предложи 3 разных сборки ПК для игр и работы: бюджетную, сбалансированную и продвинутую. Ты должен использовать только 
 предложенные выше компоненты, не добавляй свои. Не учитывай операционную систему.
