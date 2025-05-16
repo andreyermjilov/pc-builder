@@ -197,7 +197,17 @@ app.post('/api/ask-ai', async (req, res) => {
       }
     );
 
-    res.json({ response: response.data.choices[0].message.content });
+    if (
+  response.data &&
+  Array.isArray(response.data.choices) &&
+  response.data.choices[0] &&
+  response.data.choices[0].message
+) {
+  res.json({ response: response.data.choices[0].message.content });
+} else {
+  console.error('❌ Неверный формат ответа от OpenRouter:', response.data);
+  res.status(500).json({ error: 'Неверный формат ответа от OpenRouter' });
+}
   } catch (err) {
     console.error('❌ Ошибка при запросе к OpenRouter:', err?.response?.data || err.message);
     res.status(500).json({ error: 'Ошибка при обращении к ИИ' });
