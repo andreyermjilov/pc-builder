@@ -2,13 +2,13 @@ const express = require('express');
 const { google } = require('googleapis');
 const cors = require('cors');
 const path = require('path');
-const fs = require('fs');
 const axios = require('axios');
 require('dotenv').config();
 
 const app = express();
 app.use(express.json());
 
+// Проверка переменных окружения
 const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:3000';
 const spreadsheetId = process.env.SPREADSHEET_ID;
 const keyFilePath = process.env.KEY_FILE_PATH;
@@ -21,22 +21,26 @@ if (!spreadsheetId || !keyFilePath || !process.env.OPENROUTER_API_KEY) {
 
 app.use(cors({ origin: corsOrigin }));
 
+// Авторизация Google Sheets API
 const auth = new google.auth.GoogleAuth({
   keyFile: path.resolve(__dirname, keyFilePath),
   scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
 });
 
+// Категории компонентов
 const categories = [
   'processor', 'graphicsCard', 'ram', 'storage',
   'motherboard', 'case', 'cooler', 'monitor',
   'powerSupply', 'keyboard', 'mouse', 'operatingSystem',
 ];
 
+// Парсинг чисел
 const parseNumber = val => {
   const num = parseFloat(val);
   return isNaN(num) ? 0 : num;
 };
 
+// Схемы обработки компонентов
 const componentSchema = {
   processor: row => {
     const item = {
@@ -102,9 +106,18 @@ const componentSchema = {
   }),
 };
 
-const COMPONENTS_FILE = path.join(__dirname, 'components.json');
+// Кеш
+let cachedComponents = null;
+let lastFetchTime = 0;
+const CACHE_TTL = 60 * 1000; // 1 минута
 
-async function loadComponentsAndSaveToFile() {
+// API: /components
+app.get('/api/components', async (req, res) => {
+  const now = Date.now();
+  if (cachedComponents && now - lastFetchTime < CACHE_TTL) {
+    return res.json(cachedComponents);
+  }
+
   try {
     const authClient = await auth.getClient();
     const sheetsApi = google.sheets({ version: 'v4', auth: authClient });
@@ -128,36 +141,21 @@ async function loadComponentsAndSaveToFile() {
       }
     }
 
-    fs.writeFileSync(COMPONENTS_FILE, JSON.stringify(components, null, 2), 'utf-8');
-    console.log(`✅ Компоненты сохранены в ${COMPONENTS_FILE} (${components.length} шт)`);
-  } catch (err) {
-    console.error('❌ Ошибка загрузки компонентов из Google Sheets:', err.message);
-  }
-}
-
-// Автоматическое обновление файла каждые 5 минут
-setInterval(loadComponentsAndSaveToFile, 5 * 60 * 1000);
-
-// Ручной API для компонентов
-app.get('/api/components', (req, res) => {
-  try {
-    const data = fs.readFileSync(COMPONENTS_FILE, 'utf-8');
-    const components = JSON.parse(data);
+    cachedComponents = components;
+    lastFetchTime = now;
     res.json(components);
   } catch (err) {
-    console.error('❌ Ошибка чтения components.json:', err.message);
-    res.status(500).json({ error: 'Ошибка чтения данных' });
+    console.error('❌ Ошибка при получении компонентов:', err);
+    res.status(500).json({ error: 'Ошибка сервера при получении компонентов' });
   }
 });
 
+// API: /ask-ai
 app.post('/api/ask-ai', async (req, res) => {
   const { prompt } = req.body;
   if (!prompt) return res.status(400).json({ error: 'Prompt не указан' });
 
   try {
-    const components = fs.readFileSync(COMPONENTS_FILE, 'utf-8');
-    const componentList = JSON.parse(components);
-
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
@@ -181,11 +179,11 @@ app.post('/api/ask-ai', async (req, res) => {
 Не упоминай операционную систему.
 Выведи каждую сборку отдельным блоком с названиями компонентов и итоговой ценой.
 Если компоненты несовместимы — укажи это явно в ответе.
-`.trim()
+            `.trim()
           },
           {
             role: 'user',
-            content: `Вот список всех доступных компонентов:\n\n${JSON.stringify(componentList)}\n\n${prompt}`
+            content: prompt
           }
         ],
       },
@@ -197,24 +195,13 @@ app.post('/api/ask-ai', async (req, res) => {
       }
     );
 
-    if (
-  response.data &&
-  Array.isArray(response.data.choices) &&
-  response.data.choices[0] &&
-  response.data.choices[0].message
-) {
-  res.json({ response: response.data.choices[0].message.content });
-} else {
-  console.error('❌ Неверный формат ответа от OpenRouter:', response.data);
-  res.status(500).json({ error: 'Неверный формат ответа от OpenRouter' });
-}
+    res.json({ response: response.data.choices[0].message.content });
   } catch (err) {
     console.error('❌ Ошибка при запросе к OpenRouter:', err?.response?.data || err.message);
     res.status(500).json({ error: 'Ошибка при обращении к ИИ' });
   }
 });
 
-app.listen(port, '0.0.0.0', async () => {
+app.listen(port, '0.0.0.0', () => {
   console.log(`🚀 Сервер запущен: http://localhost:${port}`);
-  await loadComponentsAndSaveToFile(); // начальная загрузка при старте
 });
