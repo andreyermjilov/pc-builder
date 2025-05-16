@@ -8,36 +8,39 @@ require('dotenv').config();
 const app = express();
 app.use(express.json());
 
-console.log('🔑 OpenRouter API Key:', process.env.OPENROUTER_API_KEY ? '✅ Найден' : '❌ НЕ найден');
-
+// Проверка переменных окружения
 const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:3000';
 const spreadsheetId = process.env.SPREADSHEET_ID;
 const keyFilePath = process.env.KEY_FILE_PATH;
 const port = process.env.SERVER_PORT || 3001;
 
-app.use(cors({ origin: corsOrigin }));
-
-if (!spreadsheetId || !keyFilePath) {
-  console.error('❌ SPREADSHEET_ID и KEY_FILE_PATH должны быть установлены в .env');
+if (!spreadsheetId || !keyFilePath || !process.env.OPENROUTER_API_KEY) {
+  console.error('❌ Убедись, что .env содержит SPREADSHEET_ID, KEY_FILE_PATH и OPENROUTER_API_KEY');
   process.exit(1);
 }
 
+app.use(cors({ origin: corsOrigin }));
+
+// Авторизация Google Sheets API
 const auth = new google.auth.GoogleAuth({
   keyFile: path.resolve(__dirname, keyFilePath),
   scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
 });
 
+// Категории компонентов
 const categories = [
   'processor', 'graphicsCard', 'ram', 'storage',
   'motherboard', 'case', 'cooler', 'monitor',
   'powerSupply', 'keyboard', 'mouse', 'operatingSystem',
 ];
 
+// Парсинг чисел
 const parseNumber = val => {
   const num = parseFloat(val);
   return isNaN(num) ? 0 : num;
 };
 
+// Схемы обработки компонентов
 const componentSchema = {
   processor: row => {
     const item = {
@@ -103,12 +106,12 @@ const componentSchema = {
   }),
 };
 
-// Кеширование
+// Кеш
 let cachedComponents = null;
 let lastFetchTime = 0;
-const CACHE_TTL = 60 * 1000;
+const CACHE_TTL = 60 * 1000; // 1 минута
 
-// Получение компонентов из Google Sheets
+// API: /components
 app.get('/api/components', async (req, res) => {
   const now = Date.now();
   if (cachedComponents && now - lastFetchTime < CACHE_TTL) {
@@ -142,15 +145,14 @@ app.get('/api/components', async (req, res) => {
     lastFetchTime = now;
     res.json(components);
   } catch (err) {
-    console.error('Ошибка при получении компонентов:', err);
+    console.error('❌ Ошибка при получении компонентов:', err);
     res.status(500).json({ error: 'Ошибка сервера при получении компонентов' });
   }
 });
 
-// Отправка данных в GPT через OpenRouter
+// API: /ask-ai
 app.post('/api/ask-ai', async (req, res) => {
   const { prompt } = req.body;
-
   if (!prompt) return res.status(400).json({ error: 'Prompt не указан' });
 
   try {
@@ -158,7 +160,27 @@ app.post('/api/ask-ai', async (req, res) => {
       'https://openrouter.ai/api/v1/chat/completions',
       {
         model: 'openai/gpt-3.5-turbo',
-        messages: [{ role: 'user', content: prompt }],
+        messages: [
+          {
+            role: 'system',
+            content: `
+Ты — умный помощник по сборке ПК. Подбирай компоненты только при строгом соблюдении совместимости.
+Правила:
+- процессор и материнская плата — по socket
+- оперативная память и материнка — по ramType
+- накопитель и материнка — по interface и supportedInterfaces
+- видеокарта и материнка — по pcieVersion
+- кулер и процессор — по socket
+- материнская плата и корпус — по formFactor и supportedFormFactors
+- блок питания должен покрывать суммарное потребление компонентов и иметь запас.
+Не включай операционную систему. Игнорируй несовместимые сборки.
+            `.trim()
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
       },
       {
         headers: {
@@ -170,7 +192,7 @@ app.post('/api/ask-ai', async (req, res) => {
 
     res.json({ response: response.data.choices[0].message.content });
   } catch (err) {
-    console.error('Ошибка при запросе к OpenRouter:', err?.response?.data || err.message);
+    console.error('❌ Ошибка при запросе к OpenRouter:', err?.response?.data || err.message);
     res.status(500).json({ error: 'Ошибка при обращении к ИИ' });
   }
 });
